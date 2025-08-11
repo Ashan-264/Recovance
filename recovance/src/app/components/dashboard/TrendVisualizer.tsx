@@ -59,10 +59,18 @@ export default function TrendVisualizer() {
   const [isConfigured, setIsConfigured] = useState(false);
   const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
 
+  // Get Strava token from input or environment variable
+  const getStravaToken = () => {
+    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
+  };
+
   // Fetch real training data from APIs
   const fetchTrainingData = async () => {
-    if (!stravaToken.trim()) {
-      setError("Please enter your Strava access token");
+    const token = getStravaToken();
+    if (!token.trim()) {
+      setError(
+        "Please enter your Strava access token or configure STRAVA_API_TOKEN environment variable"
+      );
       return;
     }
 
@@ -73,7 +81,7 @@ export default function TrendVisualizer() {
       const requestData = {
         start_date: dateRange.start_date,
         end_date: dateRange.end_date,
-        access_token: stravaToken.trim(),
+        access_token: token.trim(),
       };
 
       // Fetch all three datasets in parallel
@@ -154,12 +162,18 @@ export default function TrendVisualizer() {
                 type="password"
                 value={stravaToken}
                 onChange={(e) => setStravaToken(e.target.value)}
-                placeholder="Enter your Strava access token"
+                placeholder="Enter your Strava access token (or use STRAVA_API_TOKEN env var)"
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-400 mt-1">
-                Get your access token from Strava API settings
+                Get your access token from Strava API settings or configure
+                STRAVA_API_TOKEN environment variable
               </p>
+              {!stravaToken && process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
+                <p className="text-xs text-green-400 mt-1">
+                  Using environment variable STRAVA_API_TOKEN
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -199,7 +213,7 @@ export default function TrendVisualizer() {
 
             <button
               onClick={handleLoadData}
-              disabled={!stravaToken.trim()}
+              disabled={!getStravaToken().trim()}
               className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               Load Training Data

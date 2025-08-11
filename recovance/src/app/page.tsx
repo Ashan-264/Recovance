@@ -5,8 +5,6 @@ import Head from "next/head";
 import {
   Header,
   WelcomeSection,
-  HighlightsSection,
-  RecoverySection,
   TrendVisualizer,
   AISuggestions,
   ActionButtons,
@@ -52,10 +50,6 @@ const Home: NextPage = () => {
             date={todayDate}
             recoveryPercentage={87}
           />
-
-          <HighlightsSection />
-
-          <RecoverySection />
 
           <TrendVisualizer />
 

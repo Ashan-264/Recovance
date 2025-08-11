@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #ffffff;
@@ -23,4 +25,57 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Mapbox custom styles */
+.mapboxgl-map {
+  border-radius: 0.5rem;
+}
+
+.mapboxgl-ctrl-group {
+  background-color: #283937 !important;
+  border-color: #3b5450 !important;
+}
+
+.mapboxgl-ctrl-group button {
+  background-color: #283937 !important;
+  border-color: #3b5450 !important;
+  color: white !important;
+}
+
+.mapboxgl-ctrl-group button:hover {
+  background-color: #3b5450 !important;
+}
+
+.activity-marker {
+  transition: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Leaflet custom styles */
+.leaflet-container {
+  border-radius: 0.5rem;
+}
+
+.leaflet-control-zoom {
+  background-color: #283937 !important;
+  border-color: #3b5450 !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: #283937 !important;
+  border-color: #3b5450 !important;
+  color: white !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #3b5450 !important;
+}
+
+.custom-activity-marker {
+  transition: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }

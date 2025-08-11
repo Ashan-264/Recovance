@@ -1,18 +1,134 @@
+"use client";
+
 // pages/training.tsx
 import Head from "next/head";
+import { useState, useEffect } from "react";
 import Header from "@/app/components/Header";
 import TabNavigation from "@/app/components/training/TabNavigation";
 import Calendar from "@/app/components/training/Calendar";
-import UpcomingWorkouts from "@/app/components/training/UpcomingWorkouts";
-import TrainingPlanLibrary from "@/app/components/training/TrainingPlanLibrary";
+import StravaStats from "@/app/components/training/StravaStats";
 import AIRecommendations from "@/app/components/AISuggestions";
 import ActionButtons from "@/app/components/ActionButtons";
 
+interface StravaActivity {
+  id: number;
+  type: string;
+  name: string;
+  distance: number;
+  moving_time: number;
+  elapsed_time: number;
+  total_elevation_gain: number;
+  start_date: string;
+  start_date_local: string;
+  average_speed: number;
+  max_speed: number;
+  average_cadence?: number;
+  average_watts?: number;
+  weighted_average_watts?: number;
+  kilojoules?: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  elev_high?: number;
+  elev_low?: number;
+  upload_id?: number;
+  external_id?: string;
+  trainer: boolean;
+  commute: boolean;
+  manual: boolean;
+  private: boolean;
+  visibility: string;
+  flagged: boolean;
+  gear_id?: string;
+  start_latlng?: number[];
+  end_latlng?: number[];
+  average_temp?: number;
+  average_grade_adjusted_speed?: number;
+  average_grade?: number;
+  positive_elevation_gain?: number;
+  negative_elevation_gain?: number;
+  calories?: number;
+  description?: string;
+  photos?: any;
+  gear?: any;
+  device_name?: string;
+  embed_token?: string;
+  splits_metric?: any[];
+  splits_standard?: any[];
+  laps?: any[];
+  best_efforts?: any[];
+  kudos_count: number;
+  comment_count: number;
+  athlete_count: number;
+  photo_count: number;
+  map?: any;
+  has_kudoed: boolean;
+  hide_from_home: boolean;
+  workout_type?: number;
+  suffer_score?: number;
+}
+
 export default function TrainingPage() {
+  const [stravaToken, setStravaToken] = useState("");
+  const [activities, setActivities] = useState<StravaActivity[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Get Strava token from input or environment variable
+  const getStravaToken = () => {
+    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
+  };
+
+  const fetchActivities = async () => {
+    const token = getStravaToken();
+    if (!token) {
+      console.error("No Strava token available");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Fetch activities for the last 2 years to get comprehensive data
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+      const startDate = twoYearsAgo.toISOString().split("T")[0];
+      const endDate = new Date().toISOString().split("T")[0];
+
+      const response = await fetch("/api/strava/activities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          access_token: token,
+          start_date: startDate,
+          end_date: endDate,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setActivities(data.activities || []);
+      } else {
+        console.error("Failed to fetch activities");
+      }
+    } catch (error) {
+      console.error("Error fetching activities:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Remove auto-loading - only load when button is clicked
+  // useEffect(() => {
+  //   const token = getStravaToken();
+  //   if (token) {
+  //     fetchActivities();
+  //   }
+  // }, [stravaToken]);
+
   return (
     <>
       <Head>
-        <title>Stitch Design · Training Plans</title>
+        <title>Stitch Design · Training Analytics</title>
       </Head>
 
       <div
@@ -30,10 +146,10 @@ export default function TrainingPage() {
               <div className="flex flex-wrap justify-between gap-3 p-4">
                 <div className="flex min-w-72 flex-col gap-3">
                   <p className="text-[32px] font-bold leading-tight tracking-light text-white">
-                    Training Plans
+                    Training Analytics
                   </p>
                   <p className="text-sm font-normal leading-normal text-[#9cbab5]">
-                    Manage your workouts and training schedules
+                    Analyze your Strava activities and training patterns
                   </p>
                 </div>
               </div>
@@ -43,25 +159,51 @@ export default function TrainingPage() {
                 <TabNavigation />
               </div>
 
-              {/* 3. Calendar */}
-              <div className="flex flex-wrap items-center justify-center gap-6 p-4">
-                <Calendar />
+              {/* 3. Strava Token Input */}
+              <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-4">
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold mb-2 text-white">
+                      Strava Access Token:
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Enter your Strava access token (or use STRAVA_API_TOKEN env var)"
+                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                      value={stravaToken}
+                      onChange={(e) => setStravaToken(e.target.value)}
+                    />
+                    {!stravaToken &&
+                      process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
+                        <p className="text-xs text-green-400 mt-1">
+                          Using environment variable STRAVA_API_TOKEN
+                        </p>
+                      )}
+                  </div>
+                  <button
+                    onClick={fetchActivities}
+                    disabled={loading || !getStravaToken()}
+                    className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
+                  >
+                    {loading ? "Loading..." : "Load Activities"}
+                  </button>
+                </div>
               </div>
 
-              {/* 4. Upcoming Workouts */}
+              {/* 4. Calendar with Activity Counts */}
               <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
-                Upcoming Workouts
+                Activity Calendar
+              </h2>
+              <div className="flex flex-wrap items-center justify-center gap-6 p-4">
+                <Calendar activities={activities} />
+              </div>
+
+              {/* 5. Strava Statistics */}
+              <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
+                Activity Statistics
               </h2>
               <div className="p-4">
-                <UpcomingWorkouts />
-              </div>
-
-              {/* 5. Training Plan Library */}
-              <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
-                Training Plan Library
-              </h2>
-              <div className="flex overflow-y-auto p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <TrainingPlanLibrary />
+                <StravaStats activities={activities} />
               </div>
 
               {/* 6. AI Recommendations */}

@@ -1,5 +1,8 @@
+"use client";
+
 // pages/insights.tsx
 import Head from "next/head";
+import { useState, useEffect } from "react";
 import {
   InsightsHeader,
   PageIntro,
@@ -8,9 +11,27 @@ import {
   AnalysisRow,
   DeviceTabsAndCards,
 } from "@/app/components/insights";
+import OuraInsights from "@/app/components/insights/OuraInsights";
+import StravaInsights from "@/app/components/insights/StravaInsights";
 
 export default function InsightsPage() {
-  // Example inline SVG for “Cycling Power Output” card
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30); // 30 days ago
+    return date.toISOString().split("T")[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+  const [stravaToken, setStravaToken] = useState("");
+  const [showInsights, setShowInsights] = useState(false);
+
+  // Get Strava token from input or environment variable
+  const getStravaToken = () => {
+    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
+  };
+
+  // Example inline SVG for "Cycling Power Output" card
   const cyclingPowerSvg = (
     <svg
       width="100%"
@@ -66,340 +87,85 @@ export default function InsightsPage() {
               {/* 2. Page Intro (Title + subtitle) */}
               <PageIntro />
 
-              {/* 3. Sport‐Specific Tabs */}
-              <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
-                Sport‐Specific Insights
-              </h2>
-              <SportTabs />
-
-              {/* 4. Sport Cards Row: Cycling + Distance/Elevation + Training Load */}
-              <div className="flex flex-wrap gap-4 px-4 py-6">
-                <SportInsightCard
-                  title="Cycling Power Output"
-                  mainValue="250W Average Power"
-                  subLabel="Last 7 Days"
-                  trendValue="5%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-                <SportInsightCard
-                  title="Cycling Distance and Elevation"
-                  mainValue="100 km, 1500 m"
-                  subLabel="Last 7 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  // (Here we used a “bar‐style” grid in your HTML, so you could build that as a custom SVG or simple div‐grid)
-                  chartSvg={
-                    <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "20%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Distance, Elevation
-                      </p>
-                    </div>
-                  }
-                  xLabels={[]} // No day labels at bottom for this particular design
-                />
-                <SportInsightCard
-                  title="Cycling Training Load"
-                  mainValue="1500 TSS"
-                  subLabel="Last 7 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg /* reuse same SVG for simplicity */}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
+              {/* 3. Date Range and Token Controls */}
+              <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-white">
+                      Start Date:
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-white">
+                      End Date:
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-white">
+                      Strava Token:
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Enter Strava access token (or use STRAVA_API_TOKEN env var)"
+                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                      value={stravaToken}
+                      onChange={(e) => setStravaToken(e.target.value)}
+                    />
+                    {!stravaToken &&
+                      process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
+                        <p className="text-xs text-green-400 mt-1">
+                          Using environment variable STRAVA_API_TOKEN
+                        </p>
+                      )}
+                  </div>
+                </div>
               </div>
 
-              {/* 5. Performance Analysis Rows */}
-              <AnalysisRow
-                iconSvg={
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24px"
-                    height="24px"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                  >
-                    <path d="M232,208a8,8,0,0,1-8,…48Z" />
-                  </svg>
-                }
-                heading="Cycling Performance Analysis"
-                lines={[
-                  "Consider incorporating hill repeats to enhance your climbing ability.",
-                  "Your average power output has increased by 5% over the last week. Continue focusing on interval training to improve your peak power.",
-                ]}
-              />
-
-              {/* 6. Weightlifting Cards + Analysis */}
-              <div className="flex flex-wrap gap-4 px-4 py-6">
-                <SportInsightCard
-                  title="Weightlifting Volume"
-                  mainValue="5000 kg"
-                  subLabel="Last 7 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  chartSvg={
-                    <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "40%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Muscle Groups
-                      </p>
-                    </div>
-                  }
-                  xLabels={[]}
-                />
-                <SportInsightCard
-                  title="Weightlifting Max Effort"
-                  mainValue="150 kg"
-                  subLabel="Last 7 Days"
-                  trendValue="5%"
-                  trendPositive={true}
-                  chartSvg={
-                    <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "50%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Lifts
-                      </p>
-                    </div>
-                  }
-                  xLabels={[]}
-                />
-                <SportInsightCard
-                  title="Weightlifting Progression"
-                  mainValue="+10%"
-                  subLabel="Last 30 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg /* reuse same SVG */}
-                  xLabels={["Week 1", "Week 2", "Week 3", "Week 4"]}
-                />
+              {/* Load Button */}
+              <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-6">
+                <button
+                  onClick={() => setShowInsights(!showInsights)}
+                  className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition"
+                >
+                  {showInsights ? "Hide Insights" : "Load Insights"}
+                </button>
               </div>
 
-              <AnalysisRow
-                iconSvg={
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24px"
-                    height="24px"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                  >
-                    <path d="M232,208a8,8,0,0,1-8,…48Z" />
-                  </svg>
-                }
-                heading="Weightlifting Performance Analysis"
-                lines={[
-                  "Consider incorporating more compound exercises to maximize muscle activation.",
-                  "Your total lifting volume has increased significantly. Focus on maintaining proper form to prevent injuries.",
-                ]}
-              />
+              {showInsights && (
+                <>
+                  {/* 4. Oura Insights */}
+                  <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
+                    Oura Insights
+                  </h2>
+                  <div className="px-4 pb-6">
+                    <OuraInsights startDate={startDate} endDate={endDate} />
+                  </div>
 
-              {/* 7. Climbing Cards + Analysis */}
-              <div className="flex flex-wrap gap-4 px-4 py-6">
-                <SportInsightCard
-                  title="Climbing Route Grades"
-                  mainValue="V5 Average"
-                  subLabel="Last 7 Days"
-                  trendValue="1 Grade"
-                  trendPositive={true}
-                  chartSvg={
-                    <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "80%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Grades
-                      </p>
-                    </div>
-                  }
-                  xLabels={[]}
-                />
-                <SportInsightCard
-                  title="Climbing Session Duration"
-                  mainValue="2 Hours"
-                  subLabel="Last 7 Days"
-                  trendValue="30 Minutes"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-                <SportInsightCard
-                  title="Climbing Grip Load"
-                  mainValue="High"
-                  subLabel="Last 7 Days"
-                  trendValue="N/A"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-              </div>
-
-              <AnalysisRow
-                iconSvg={
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24px"
-                    height="24px"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                  >
-                    <path d="M232,208a8,8,0,0,1-8,…48Z" />
-                  </svg>
-                }
-                heading="Climbing Performance Analysis"
-                lines={[
-                  "Consider incorporating hangboard exercises to improve grip strength.",
-                  "You’ve been consistently climbing harder routes. Focus on maintaining your power endurance.",
-                ]}
-              />
-
-              {/* 8. Paddling Cards + Analysis */}
-              <div className="flex flex-wrap gap-4 px-4 py-6">
-                <SportInsightCard
-                  title="Paddling Stroke Rate"
-                  mainValue="60 Strokes/Min"
-                  subLabel="Last 7 Days"
-                  trendValue="5%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-                <SportInsightCard
-                  title="Paddling Distance"
-                  mainValue="20 km"
-                  subLabel="Last 7 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-                <SportInsightCard
-                  title="Paddling Efficiency"
-                  mainValue="High"
-                  subLabel="Last 7 Days"
-                  trendValue="N/A"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-              </div>
-
-              <AnalysisRow
-                iconSvg={
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24px"
-                    height="24px"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                  >
-                    <path d="M232,208a8,8,0,0,1-8,…48Z" />
-                  </svg>
-                }
-                heading="Paddling Performance Analysis"
-                lines={[
-                  "Consider incorporating interval training to improve your paddling speed.",
-                  "Your paddling efficiency remains high. Focus on maintaining your stroke rate and distance.",
-                ]}
-              />
-
-              {/* 9. Calisthenics Cards + Analysis */}
-              <div className="flex flex-wrap gap-4 px-4 py-6">
-                <SportInsightCard
-                  title="Calisthenics Reps and Sets"
-                  mainValue="100 Reps, 10 Sets"
-                  subLabel="Last 7 Days"
-                  trendValue="5%"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Monday Exercises"]} // you can make a custom layout if you prefer
-                />
-                <SportInsightCard
-                  title="Calisthenics Progression"
-                  mainValue="+10%"
-                  subLabel="Last 30 Days"
-                  trendValue="10%"
-                  trendPositive={true}
-                  chartSvg={
-                    <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "20%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Week 1
-                      </p>
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "70%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Week 2
-                      </p>
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "40%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Week 3
-                      </p>
-                      <div
-                        className="border-[#9db9b5] bg-[#283936] border-t-2 w-full"
-                        style={{ height: "60%" }}
-                      />
-                      <p className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]">
-                        Week 4
-                      </p>
-                    </div>
-                  }
-                  xLabels={[]}
-                />
-                <SportInsightCard
-                  title="Calisthenics Muscle Activation"
-                  mainValue="High"
-                  subLabel="Last 7 Days"
-                  trendValue="N/A"
-                  trendPositive={true}
-                  chartSvg={cyclingPowerSvg}
-                  xLabels={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
-                />
-              </div>
-
-              <AnalysisRow
-                iconSvg={
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24px"
-                    height="24px"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                  >
-                    <path d="M232,208a8,8,0,0,1-8,…48Z" />
-                  </svg>
-                }
-                heading="Calisthenics Performance Analysis"
-                lines={[
-                  "Consider incorporating plyometrics to improve power output.",
-                  "Your calisthenics progression is steady. Focus on increasing the difficulty of your exercises.",
-                ]}
-              />
-
-              {/* 10. Device‐Specific Insights */}
-              <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
-                Device‐Specific Insights
-              </h2>
-              <DeviceTabsAndCards />
+                  {/* 5. Strava Insights */}
+                  <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
+                    Strava Insights
+                  </h2>
+                  <div className="px-4 pb-6">
+                    <StravaInsights
+                      startDate={startDate}
+                      endDate={endDate}
+                      stravaToken={getStravaToken()}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

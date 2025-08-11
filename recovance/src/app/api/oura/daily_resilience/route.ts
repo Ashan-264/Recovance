@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const url = `https://api.ouraring.com/v2/usercollection/sleep?start_date=${start_date}&end_date=${end_date}`;
+    const url = `https://api.ouraring.com/v2/usercollection/daily_resilience?start_date=${start_date}&end_date=${end_date}`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -38,16 +38,12 @@ export async function POST(req: NextRequest) {
 
     const data = await response.json();
 
-    console.log("Sleep API URL:", url);
-    console.log("Sleep API response data:", data);
-    console.log("Sleep records count:", (data.data || []).length);
-
     return NextResponse.json({
       data: data.data || [],
       next_token: data.next_token || null,
     });
   } catch (error) {
-    console.error("Error fetching sleep data:", error);
+    console.error("Error fetching daily resilience data:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

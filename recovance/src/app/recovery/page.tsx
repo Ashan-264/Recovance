@@ -91,6 +91,9 @@ interface BurnoutScore {
     sleep_debt_score: number;
     training_streak_score: number;
     perceived_exertion_score: number;
+    readiness_score?: number;
+    stress_score?: number;
+    resilience_score?: number;
   };
   weights: {
     acwr: number;
@@ -99,6 +102,9 @@ interface BurnoutScore {
     sleep: number;
     streak: number;
     subjective: number;
+    readiness?: number;
+    stress?: number;
+    resilience?: number;
   };
   week_start: string;
   week_end: string;
@@ -118,6 +124,8 @@ interface StravaActivity {
   total_elevation_gain: number;
   description?: string;
   suffer_score?: number;
+  calories?: number;
+  kilojoules?: number;
 }
 
 interface DailyExertion {
@@ -126,14 +134,22 @@ interface DailyExertion {
 }
 
 export default function RecoveryPage() {
-  const [startDate, setStartDate] = useState("2021-11-01");
-  const [endDate, setEndDate] = useState("2025-12-01");
+  // Default date range: last 3 months to today
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const threeMonthsAgo = new Date(today);
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  const threeMonthsAgoStr = threeMonthsAgo.toISOString().split("T")[0];
+
+  const [startDate, setStartDate] = useState(threeMonthsAgoStr);
+  const [endDate, setEndDate] = useState(todayStr);
   const [sleepData, setSleepData] = useState<SleepDataItem[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [readinessData, setReadinessData] = useState<ReadinessDataItem[]>([]);
   const [selectedReadinessDay, setSelectedReadinessDay] = useState<string>("");
 
   // Burnout calculation state
+  // Strava removed – no access token needed
   const [stravaAccessToken, setStravaAccessToken] = useState("");
   const [burnoutScores, setBurnoutScores] = useState<BurnoutScore[]>([]);
   const [burnoutSummary, setBurnoutSummary] = useState<BurnoutSummary | null>(
@@ -141,12 +157,13 @@ export default function RecoveryPage() {
   );
   const [burnoutLoading, setBurnoutLoading] = useState(false);
   const [burnoutWeights, setBurnoutWeights] = useState({
-    acwr: 0.3,
     hrv: 0.2,
     rhr: 0.15,
     sleep: 0.2,
-    streak: 0.1,
-    subjective: 0.05,
+    subjective: 0.1,
+    readiness: 0.1,
+    stress: 0.15,
+    resilience: 0.1,
   });
 
   // State for showing daily details
@@ -157,6 +174,399 @@ export default function RecoveryPage() {
   const [dailyDetails, setDailyDetails] = useState<
     Array<{ date: string; value: number; score: number }>
   >([]);
+
+  // Expanded weekly daily breakdown state
+  type MetricName =
+    | "hrv"
+    | "rhr"
+    | "calories"
+    | "readiness"
+    | "sleep_score"
+    | "stress"
+    | "resilience";
+  interface DailyMetricDetail {
+    value: number;
+    score: number;
+    source: string;
+  }
+  interface WeekDailyRow {
+    date: string;
+    hrv?: DailyMetricDetail;
+    rhr?: DailyMetricDetail;
+    calories?: DailyMetricDetail;
+    readiness?: DailyMetricDetail;
+    sleepScore?: DailyMetricDetail;
+    stress?: DailyMetricDetail;
+    resilience?: DailyMetricDetail;
+  }
+
+  const [expandedWeekIndex, setExpandedWeekIndex] = useState<number | null>(
+    null
+  );
+  const [weekDailyMetrics, setWeekDailyMetrics] = useState<
+    Record<number, WeekDailyRow[]>
+  >({});
+  const [weekAverages, setWeekAverages] = useState<
+    Record<
+      number,
+      {
+        readiness?: number;
+        sleepScore?: number;
+        calories?: number;
+        rhr?: number;
+        hrv?: number;
+        stress?: number;
+        resilience?: number;
+      }
+    >
+  >({});
+
+  const handleToggleWeek = async (weekIndex: number) => {
+    if (expandedWeekIndex === weekIndex) {
+      setExpandedWeekIndex(null);
+      return;
+    }
+    setExpandedWeekIndex(weekIndex);
+    if (!weekDailyMetrics[weekIndex]) {
+      await fetchWeekDailyMetrics(weekIndex);
+    }
+  };
+
+  const fetchWeekDailyMetrics = async (weekIndex: number) => {
+    const week = burnoutScores[weekIndex];
+    if (!week) return;
+
+    const weekStart = new Date(week.week_start);
+    const weekEnd = new Date(week.week_end);
+
+    const rowsMap = new Map<string, WeekDailyRow>();
+
+    try {
+      // Fetch Oura sleep data for HRV and RHR
+      const sleepRes = await fetch("/api/sleep/sleep_detail_days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+
+      if (sleepRes.ok) {
+        const data = await sleepRes.json();
+        console.log("Sleep data response:", data);
+        const sleepRecords: SleepDataItem[] = data.data || [];
+        console.log("Sleep records:", sleepRecords);
+        const dailyMap = new Map<string, SleepDataItem>();
+        sleepRecords.forEach((record: SleepDataItem) => {
+          dailyMap.set(record.day, record);
+        });
+
+        for (
+          let d = new Date(weekStart);
+          d <= weekEnd;
+          d.setDate(d.getDate() + 1)
+        ) {
+          const date = d.toISOString().split("T")[0];
+          const record = dailyMap.get(date);
+          if (!record) continue;
+          console.log(`Processing sleep record for ${date}:`, record);
+          console.log(`Sleep record score field:`, (record as any).score);
+
+          // HRV
+          if (record.average_hrv && record.average_hrv > 0) {
+            const hrvValue = record.average_hrv;
+            const hrvScore = Math.max(0, (100 - hrvValue) / 100);
+            const row = rowsMap.get(date) || { date };
+            row.hrv = {
+              value: hrvValue,
+              score: hrvScore,
+              source: `Oura sleep_detail_days id: ${record.id}`,
+            };
+            rowsMap.set(date, row);
+          }
+
+          // Resting HR
+          if (record.average_heart_rate && record.average_heart_rate > 0) {
+            const rhrValue = record.average_heart_rate;
+            const rhrScore = Math.min(1, (rhrValue - 50) / 20);
+            const row = rowsMap.get(date) || { date };
+            row.rhr = {
+              value: rhrValue,
+              score: rhrScore > 0 ? rhrScore : 0,
+              source: `Oura sleep_detail_days id: ${record.id}`,
+            };
+            rowsMap.set(date, row);
+          }
+
+          // Sleep Score is fetched separately from daily_sleep endpoint below
+        }
+      }
+
+      // Fetch Oura daily sleep data for sleep scores (separate from session data)
+      const dailySleepRes = await fetch("/api/sleep/oura", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+      if (dailySleepRes.ok) {
+        const data = await dailySleepRes.json();
+        console.log("Daily sleep data response:", data);
+        const dailySleepRecords = data.data || [];
+        console.log("Daily sleep records:", dailySleepRecords);
+
+        dailySleepRecords.forEach((record: any) => {
+          const date = record.day;
+          if (
+            record.score &&
+            typeof record.score === "number" &&
+            record.score > 0
+          ) {
+            const sleepScoreValue = record.score;
+            const sleepRisk = Math.max(0, (100 - sleepScoreValue) / 100);
+            const row: WeekDailyRow = rowsMap.get(date) || { date };
+            row.sleepScore = {
+              value: sleepScoreValue,
+              score: sleepRisk,
+              source: `Oura daily_sleep score: ${sleepScoreValue}`,
+            };
+            rowsMap.set(date, row);
+            console.log(`Added sleep score for ${date}: ${sleepScoreValue}`);
+          }
+        });
+      }
+
+      // Fetch Oura daily activity for active calories
+      const activityRes = await fetch("/api/oura/daily_activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+      if (activityRes.ok) {
+        const data = await activityRes.json();
+        const dailyMap = new Map<string, any>();
+        (data.data || []).forEach((rec: any) => {
+          const day =
+            rec.day ||
+            rec.date ||
+            (rec.timestamp ? String(rec.timestamp).split("T")[0] : undefined);
+          if (day) dailyMap.set(day, rec);
+        });
+        for (
+          let d = new Date(weekStart);
+          d <= weekEnd;
+          d.setDate(d.getDate() + 1)
+        ) {
+          const date = d.toISOString().split("T")[0];
+          const rec = dailyMap.get(date);
+          const active =
+            rec?.active_calories ??
+            rec?.active_calories_total ??
+            rec?.cal_active;
+          if (typeof active === "number" && active > 0) {
+            const value = active;
+            const dailyHighCalories = 1000;
+            const score = Math.min(value / dailyHighCalories, 1.0);
+            const row = rowsMap.get(date) || { date };
+            row.calories = { value, score, source: "Oura daily_activity" };
+            rowsMap.set(date, row);
+          }
+        }
+      }
+
+      // Fetch Oura stress data
+      const stressRes = await fetch("/api/oura/daily_stress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+      if (stressRes.ok) {
+        const data = await stressRes.json();
+        console.log("Stress data response:", data);
+        console.log("Sample stress record:", data.data?.[0]);
+        (data.data || []).forEach((rec: any) => {
+          const date = rec.day;
+          console.log(`Stress record for ${date}:`, rec);
+          if (rec.stress_high && typeof rec.stress_high === "number") {
+            // Convert seconds to minutes for display
+            const stressSeconds = rec.stress_high;
+            const stressMinutes = Math.round(stressSeconds / 60);
+            // Risk normalized vs. 8 hours (480 minutes)
+            const stressRisk = stressMinutes / 120;
+            const row: WeekDailyRow = rowsMap.get(date) || { date };
+            row.stress = {
+              value: stressMinutes,
+              score: stressRisk,
+              source: "Oura stress (minutes high)",
+            };
+            rowsMap.set(date, row);
+          }
+        });
+      }
+
+      // Fetch Oura resilience data
+      const resilienceRes = await fetch("/api/oura/daily_resilience", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+      if (resilienceRes.ok) {
+        const data = await resilienceRes.json();
+        console.log("Resilience data response:", data);
+        (data.data || []).forEach((rec: any) => {
+          const date = rec.day;
+          if (rec.level) {
+            const levelRiskMap: { [key: string]: number } = {
+              exceptional: 0.0,
+              solid: 0.2,
+              adequate: 0.4,
+              limited: 0.8,
+              compromised: 1.0,
+            };
+            const resilienceLevel = rec.level.toLowerCase();
+            const resilienceRisk = levelRiskMap[resilienceLevel] ?? 0.6;
+            const row: WeekDailyRow = rowsMap.get(date) || { date };
+            row.resilience = {
+              value: resilienceLevel,
+              score: resilienceRisk,
+              source: "Oura resilience",
+            };
+            rowsMap.set(date, row);
+          }
+        });
+      }
+
+      // Fetch Oura readiness data
+      const readinessRes = await fetch("/api/sleep/readiness", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_date: week.week_start,
+          end_date: week.week_end,
+        }),
+      });
+      if (readinessRes.ok) {
+        const data = await readinessRes.json();
+        console.log("Readiness data response:", data);
+        const dailyMap = new Map<string, any>();
+        (data.data || []).forEach((rec: any) => {
+          const day =
+            rec.day ||
+            rec.date ||
+            (rec.timestamp ? String(rec.timestamp).split("T")[0] : undefined);
+          if (day) dailyMap.set(day, rec);
+        });
+        for (
+          let d = new Date(weekStart);
+          d <= weekEnd;
+          d.setDate(d.getDate() + 1)
+        ) {
+          const date = d.toISOString().split("T")[0];
+          const rec = dailyMap.get(date);
+          console.log(`Processing readiness for ${date}:`, rec);
+          if (rec?.score && typeof rec.score === "number" && rec.score > 0) {
+            const readinessValue = rec.score;
+            const readinessRisk = Math.max(0, (100 - readinessValue) / 100);
+            const row = rowsMap.get(date) || { date };
+            row.readiness = {
+              value: readinessValue,
+              score: readinessRisk,
+              source: "Oura readiness",
+            };
+            rowsMap.set(date, row);
+          }
+        }
+      }
+
+      // Build final rows; include only days that have a sleep score
+      const rows: WeekDailyRow[] = Array.from(rowsMap.values())
+        .filter((row) => row.sleepScore && row.sleepScore.value > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      setWeekDailyMetrics((prev) => ({ ...prev, [weekIndex]: rows }));
+
+      // Compute week averages
+      const avg = (arr: number[]) =>
+        arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : undefined;
+      const readinessAvg = avg(
+        rows
+          .map((r) => r.readiness?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      const sleepScoreAvg = avg(
+        rows
+          .map((r) => r.sleepScore?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      const caloriesAvg = avg(
+        rows
+          .map((r) => r.calories?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      const rhrAvg = avg(
+        rows
+          .map((r) => r.rhr?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      const hrvAvg = avg(
+        rows
+          .map((r) => r.hrv?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      const stressAvg = avg(
+        rows
+          .map((r) => r.stress?.value)
+          .filter((v): v is number => typeof v === "number")
+      );
+      // For resilience, we need to convert string levels to numeric values for averaging
+      const resilienceNumericValues = rows
+        .map((r) => {
+          if (!r.resilience?.value) return null;
+          const levelMap: { [key: string]: number } = {
+            exceptional: 5,
+            solid: 4,
+            adequate: 3,
+            limited: 2,
+            compromised: 1,
+          };
+          return levelMap[r.resilience.value] ?? 3;
+        })
+        .filter((v): v is number => typeof v === "number");
+      const resilienceAvg =
+        resilienceNumericValues.length > 0
+          ? resilienceNumericValues.reduce((s, v) => s + v, 0) /
+            resilienceNumericValues.length
+          : undefined;
+
+      setWeekAverages((prev) => ({
+        ...prev,
+        [weekIndex]: {
+          readiness: readinessAvg,
+          sleepScore: sleepScoreAvg,
+          calories: caloriesAvg,
+          rhr: rhrAvg,
+          hrv: hrvAvg,
+          stress: stressAvg,
+          resilience: resilienceAvg,
+        },
+      }));
+    } catch (error) {
+      console.error("Error fetching week daily metrics:", error);
+      // keep UI silent here; week still toggles but shows no data
+    }
+  };
 
   const handleReadinessSync = async () => {
     try {
@@ -240,10 +650,7 @@ export default function RecoveryPage() {
   };
 
   const handleBurnoutCalculation = async () => {
-    if (!stravaAccessToken) {
-      alert("Please enter your Strava access token");
-      return;
-    }
+    // Strava access token no longer required
 
     try {
       setBurnoutLoading(true);
@@ -253,7 +660,7 @@ export default function RecoveryPage() {
         body: JSON.stringify({
           start_date: startDate,
           end_date: endDate,
-          access_token: stravaAccessToken,
+          // Strava access removed
           weights: burnoutWeights,
         }),
       });
@@ -300,66 +707,15 @@ export default function RecoveryPage() {
 
       if (metric === "acwr") {
         // Fetch Strava activities for ACWR calculation
-        if (!stravaAccessToken) {
-          alert("Please enter your Strava access token to view ACWR details");
-          return;
-        }
+        // Strava no longer required; ACWR details disabled
 
         const startTimestamp = Math.floor(weekStart.getTime() / 1000);
         const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
 
-        const response = await fetch(
-          `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=200`,
-          {
-            headers: {
-              Authorization: `Bearer ${stravaAccessToken}`,
-            },
-          }
-        );
+        // ACWR based on Strava is disabled; return empty daily data
+        const response = { ok: false } as any;
 
-        if (response.ok) {
-          const activities: StravaActivity[] = await response.json();
-
-          // Group activities by date and calculate daily load
-          const dailyLoads = new Map<string, number>();
-
-          activities.forEach((activity: StravaActivity) => {
-            const date = new Date(activity.start_date)
-              .toISOString()
-              .split("T")[0];
-            const load =
-              (activity.total_elevation_gain || 0) +
-              (activity.distance || 0) * 0.1;
-            dailyLoads.set(date, (dailyLoads.get(date) || 0) + load);
-          });
-
-          // Generate daily data for the week
-          for (
-            let d = new Date(weekStart);
-            d <= weekEnd;
-            d.setDate(d.getDate() + 1)
-          ) {
-            const date = d.toISOString().split("T")[0];
-            const dailyLoad = dailyLoads.get(date) || 0;
-
-            // Calculate ACWR for this day (simplified - in reality you'd need 7-day and 28-day averages)
-            const acwrValue = dailyLoad > 0 ? Math.min(dailyLoad / 100, 2) : 0; // Normalized value
-            const acwrScore =
-              acwrValue > 1.5
-                ? 1.0
-                : acwrValue > 1.3
-                ? 0.6
-                : acwrValue > 0.8
-                ? 0.1
-                : 0.3;
-
-            dailyData.push({
-              date,
-              value: dailyLoad,
-              score: acwrScore,
-            });
-          }
-        }
+        // no-op
       } else if (["hrv", "rhr", "sleep"].includes(metric)) {
         // Fetch Oura sleep data for HRV, RHR, and sleep metrics
         const ouraToken = process.env.OURA_API_TOKEN;
@@ -396,6 +752,7 @@ export default function RecoveryPage() {
             const date = d.toISOString().split("T")[0];
             const record = dailyMap.get(date);
 
+            // Only include days that actually have measurements
             if (record) {
               let value = 0;
               let score = 0;
@@ -419,138 +776,29 @@ export default function RecoveryPage() {
               }
 
               dailyData.push({ date, value, score });
-            } else {
-              // No data for this day
-              dailyData.push({ date, value: 0, score: 0 });
             }
           }
         }
       } else if (metric === "streak") {
         // Calculate training streak for each day
-        if (!stravaAccessToken) {
-          alert(
-            "Please enter your Strava access token to view training streak details"
-          );
-          return;
-        }
+        // Strava no longer required; training streak disabled
 
         const startTimestamp = Math.floor(weekStart.getTime() / 1000);
         const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
 
-        const response = await fetch(
-          `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=200`,
-          {
-            headers: {
-              Authorization: `Bearer ${stravaAccessToken}`,
-            },
-          }
-        );
+        const response = { ok: false } as any;
 
-        if (response.ok) {
-          const activities: StravaActivity[] = await response.json();
-
-          // Group activities by date
-          const dailyActivities = new Map<string, number>();
-          activities.forEach((activity: StravaActivity) => {
-            const date = new Date(activity.start_date)
-              .toISOString()
-              .split("T")[0];
-            dailyActivities.set(date, (dailyActivities.get(date) || 0) + 1);
-          });
-
-          // Calculate streak for each day
-          let currentStreak = 0;
-          for (
-            let d = new Date(weekStart);
-            d <= weekEnd;
-            d.setDate(d.getDate() + 1)
-          ) {
-            const date = d.toISOString().split("T")[0];
-            const hasActivity = dailyActivities.has(date);
-
-            if (hasActivity) {
-              currentStreak++;
-            } else {
-              currentStreak = 0;
-            }
-
-            const value = hasActivity ? 1 : 0;
-            const score =
-              currentStreak <= 3 ? 1.0 : currentStreak <= 6 ? 0.5 : 0.1;
-
-            dailyData.push({ date, value, score });
-          }
-        }
-      } else if (metric === "subjective") {
-        // Calculate perceived exertion for each day
-        if (!stravaAccessToken) {
-          alert(
-            "Please enter your Strava access token to view perceived exertion details"
-          );
-          return;
-        }
+        // no-op
+      } else if (metric === "calories") {
+        // Calculate total calories for each day
+        // Strava no longer required; calories shown via Oura in expanded view already
 
         const startTimestamp = Math.floor(weekStart.getTime() / 1000);
         const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
 
-        const response = await fetch(
-          `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=200`,
-          {
-            headers: {
-              Authorization: `Bearer ${stravaAccessToken}`,
-            },
-          }
-        );
+        const response = { ok: false } as any;
 
-        if (response.ok) {
-          const activities: StravaActivity[] = await response.json();
-
-          // Group activities by date and calculate perceived exertion
-          const dailyExertion = new Map<string, DailyExertion>();
-
-          activities.forEach((activity: StravaActivity) => {
-            const date = new Date(activity.start_date)
-              .toISOString()
-              .split("T")[0];
-            const current = dailyExertion.get(date) || {
-              count: 0,
-              highEffort: 0,
-            };
-
-            const description = (activity.description || "").toLowerCase();
-            const hasRPE =
-              description.includes("rpe") ||
-              description.includes("rate of perceived exertion");
-            const highSufferScore =
-              activity.suffer_score && activity.suffer_score > 100;
-
-            current.count++;
-            if (hasRPE || highSufferScore) {
-              current.highEffort++;
-            }
-
-            dailyExertion.set(date, current);
-          });
-
-          // Generate daily data
-          for (
-            let d = new Date(weekStart);
-            d <= weekEnd;
-            d.setDate(d.getDate() + 1)
-          ) {
-            const date = d.toISOString().split("T")[0];
-            const exertion = dailyExertion.get(date);
-
-            if (exertion) {
-              const value = exertion.count;
-              const score =
-                exertion.count > 0 ? exertion.highEffort / exertion.count : 0;
-              dailyData.push({ date, value, score });
-            } else {
-              dailyData.push({ date, value: 0, score: 0 });
-            }
-          }
-        }
+        // no-op
       }
 
       setDailyDetails(dailyData);
@@ -1030,18 +1278,7 @@ export default function RecoveryPage() {
                 </h3>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold mb-2">
-                      Strava Access Token:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Enter your Strava access token"
-                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                      value={stravaAccessToken}
-                      onChange={(e) => setStravaAccessToken(e.target.value)}
-                    />
-                  </div>
+                  {/* Strava configuration removed */}
 
                   <div>
                     <label className="block text-sm font-semibold mb-2">
@@ -1070,23 +1307,6 @@ export default function RecoveryPage() {
                     Score Weights:
                   </label>
                   <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs mb-1">ACWR (30%):</label>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min="0"
-                        max="1"
-                        className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-1 text-white text-sm"
-                        value={burnoutWeights.acwr}
-                        onChange={(e) =>
-                          setBurnoutWeights((prev) => ({
-                            ...prev,
-                            acwr: parseFloat(e.target.value) || 0,
-                          }))
-                        }
-                      />
-                    </div>
                     <div>
                       <label className="block text-xs mb-1">
                         HRV Drop (20%):
@@ -1127,7 +1347,7 @@ export default function RecoveryPage() {
                     </div>
                     <div>
                       <label className="block text-xs mb-1">
-                        Sleep Debt (20%):
+                        Sleep Score (20%):
                       </label>
                       <input
                         type="number"
@@ -1146,26 +1366,7 @@ export default function RecoveryPage() {
                     </div>
                     <div>
                       <label className="block text-xs mb-1">
-                        Training Streak (10%):
-                      </label>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min="0"
-                        max="1"
-                        className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-1 text-white text-sm"
-                        value={burnoutWeights.streak}
-                        onChange={(e) =>
-                          setBurnoutWeights((prev) => ({
-                            ...prev,
-                            streak: parseFloat(e.target.value) || 0,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs mb-1">
-                        Perceived Exertion (5%):
+                        Active Calories (10%):
                       </label>
                       <input
                         type="number"
@@ -1178,6 +1379,63 @@ export default function RecoveryPage() {
                           setBurnoutWeights((prev) => ({
                             ...prev,
                             subjective: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs mb-1">
+                        Readiness Score (10%):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-1 text-white text-sm"
+                        value={burnoutWeights.readiness}
+                        onChange={(e) =>
+                          setBurnoutWeights((prev) => ({
+                            ...prev,
+                            readiness: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs mb-1">
+                        Stress Score (15%):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-1 text-white text-sm"
+                        value={burnoutWeights.stress}
+                        onChange={(e) =>
+                          setBurnoutWeights((prev) => ({
+                            ...prev,
+                            stress: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs mb-1">
+                        Resilience Score (10%):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-1 text-white text-sm"
+                        value={burnoutWeights.resilience}
+                        onChange={(e) =>
+                          setBurnoutWeights((prev) => ({
+                            ...prev,
+                            resilience: parseFloat(e.target.value) || 0,
                           }))
                         }
                       />
@@ -1257,7 +1515,8 @@ export default function RecoveryPage() {
                   {burnoutScores.map((week, index) => (
                     <div
                       key={index}
-                      className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450]"
+                      className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] cursor-pointer"
+                      onClick={() => handleToggleWeek(index)}
                     >
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-semibold text-white">
@@ -1277,64 +1536,253 @@ export default function RecoveryPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4 text-xs">
+                      <div className="grid grid-cols-4 gap-2 text-xs">
                         <div>
-                          <p className="text-gray-400">ACWR Score</p>
-                          <button
-                            onClick={() => showDailyDetails(index, "acwr")}
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.acwr_score}
-                          </button>
+                          <p className="text-gray-400">Avg Readiness</p>
+                          <p className="font-semibold text-blue-400">
+                            {weekAverages[index]?.readiness?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">HRV Drop Score</p>
-                          <button
-                            onClick={() => showDailyDetails(index, "hrv")}
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.hrv_drop_score}
-                          </button>
+                          <p className="text-gray-400">Avg Sleep Score</p>
+                          <p className="font-semibold text-blue-400">
+                            {weekAverages[index]?.sleepScore?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">Resting HR Score</p>
-                          <button
-                            onClick={() => showDailyDetails(index, "rhr")}
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.resting_hr_score}
-                          </button>
+                          <p className="text-gray-400">Avg Active Calories</p>
+                          <p className="font-semibold text-blue-400">
+                            {weekAverages[index]?.calories?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">Sleep Debt Score</p>
-                          <button
-                            onClick={() => showDailyDetails(index, "sleep")}
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.sleep_debt_score}
-                          </button>
+                          <p className="text-gray-400">Avg RHR</p>
+                          <p className="font-semibold text-blue-400">
+                            {weekAverages[index]?.rhr?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">Training Streak Score</p>
-                          <button
-                            onClick={() => showDailyDetails(index, "streak")}
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.training_streak_score}
-                          </button>
+                          <p className="text-gray-400">Avg HRV</p>
+                          <p className="font-semibold text-blue-400">
+                            {weekAverages[index]?.hrv?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">Perceived Exertion</p>
-                          <button
-                            onClick={() =>
-                              showDailyDetails(index, "subjective")
-                            }
-                            className="font-semibold text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                          >
-                            {week.breakdown.perceived_exertion_score}
-                          </button>
+                          <p className="text-gray-400">Avg Stress (min)</p>
+                          <p className="font-semibold text-red-400">
+                            {weekAverages[index]?.stress?.toFixed(0) ?? "—"}
+                          </p>
                         </div>
+                        <div>
+                          <p className="text-gray-400">Avg Resilience</p>
+                          <p className="font-semibold text-green-400">
+                            {weekAverages[index]?.resilience
+                              ? (() => {
+                                  const levelMap = [
+                                    "",
+                                    "Compromised",
+                                    "Limited",
+                                    "Adequate",
+                                    "Solid",
+                                    "Exceptional",
+                                  ];
+                                  return (
+                                    levelMap[
+                                      Math.round(
+                                        weekAverages[index]!.resilience!
+                                      )
+                                    ] || "Adequate"
+                                  );
+                                })()
+                              : "—"}
+                          </p>
+                        </div>
+                        <div></div> {/* Empty cell to fill the 4x2 grid */}
                       </div>
+
+                      {expandedWeekIndex === index && (
+                        <div className="mt-4 bg-[#111817] border border-[#3b5450] rounded-md overflow-hidden">
+                          <div className="px-4 py-3 border-b border-[#3b5450] flex items-center justify-between">
+                            <span className="text-sm text-gray-300">
+                              Per-day details (only days with measurements)
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                fetchWeekDailyMetrics(index);
+                              }}
+                              className="text-xs px-2 py-1 rounded bg-[#283937] text-white border border-[#3b5450] hover:bg-[#36514e]"
+                            >
+                              Refresh
+                            </button>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full text-xs text-left text-gray-200">
+                              <thead className="bg-[#1e2a28] text-gray-300">
+                                <tr>
+                                  <th className="px-3 py-2">Date</th>
+                                  <th className="px-3 py-2">HRV (ms)</th>
+                                  <th className="px-3 py-2">HRV Score</th>
+                                  <th className="px-3 py-2">HRV Source</th>
+                                  <th className="px-3 py-2">
+                                    Resting HR (bpm)
+                                  </th>
+                                  <th className="px-3 py-2">RHR Score</th>
+                                  <th className="px-3 py-2">RHR Source</th>
+                                  <th className="px-3 py-2">Calories (kcal)</th>
+                                  <th className="px-3 py-2">Calories Score</th>
+                                  <th className="px-3 py-2">Calories Source</th>
+                                  <th className="px-3 py-2">Sleep Score</th>
+                                  <th className="px-3 py-2">Sleep Risk</th>
+                                  <th className="px-3 py-2">Sleep Source</th>
+                                  <th className="px-3 py-2">Readiness</th>
+                                  <th className="px-3 py-2">Readiness Risk</th>
+                                  <th className="px-3 py-2">
+                                    Readiness Source
+                                  </th>
+                                  <th className="px-3 py-2">Stress (min)</th>
+                                  <th className="px-3 py-2">Stress Risk</th>
+                                  <th className="px-3 py-2">Stress Source</th>
+                                  <th className="px-3 py-2">Resilience</th>
+                                  <th className="px-3 py-2">Resilience Risk</th>
+                                  <th className="px-3 py-2">
+                                    Resilience Source
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(weekDailyMetrics[index] || []).map(
+                                  (row, i) => (
+                                    <tr
+                                      key={row.date + i}
+                                      className={
+                                        i % 2 === 0
+                                          ? "bg-[#1a2423]"
+                                          : "bg-[#16201f]"
+                                      }
+                                    >
+                                      <td className="px-3 py-2 text-white whitespace-nowrap">
+                                        {row.date}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.hrv
+                                          ? row.hrv.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.hrv
+                                          ? row.hrv.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.hrv ? row.hrv.source : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.rhr
+                                          ? row.rhr.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.rhr
+                                          ? row.rhr.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.rhr ? row.rhr.source : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.calories
+                                          ? row.calories.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.calories
+                                          ? row.calories.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.calories
+                                          ? row.calories.source
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.sleepScore
+                                          ? row.sleepScore.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.sleepScore
+                                          ? row.sleepScore.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.sleepScore
+                                          ? row.sleepScore.source
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.readiness
+                                          ? row.readiness.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.readiness
+                                          ? row.readiness.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.readiness
+                                          ? row.readiness.source
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.stress
+                                          ? row.stress.value.toFixed(0)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.stress
+                                          ? row.stress.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.stress ? row.stress.source : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.resilience
+                                          ? String(row.resilience.value)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.resilience
+                                          ? row.resilience.score.toFixed(2)
+                                          : "—"}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {row.resilience
+                                          ? row.resilience.source
+                                          : "—"}
+                                      </td>
+                                    </tr>
+                                  )
+                                )}
+                                {(!weekDailyMetrics[index] ||
+                                  weekDailyMetrics[index].length === 0) && (
+                                  <tr>
+                                    <td
+                                      className="px-3 py-3 text-center text-gray-400"
+                                      colSpan={10}
+                                    >
+                                      No daily measurements found for this week.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -3,34 +3,37 @@ import { NextRequest, NextResponse } from "next/server";
 interface BurnoutCalculationRequest {
   start_date: string;
   end_date: string;
-  access_token: string;
+  access_token?: string;
   weights?: {
-    acwr?: number;
     hrv?: number;
     rhr?: number;
     sleep?: number;
-    streak?: number;
     subjective?: number;
+    readiness?: number;
+    stress?: number;
+    resilience?: number;
   };
 }
 
 interface BurnoutScore {
   total_score: number;
   breakdown: {
-    acwr_score: number;
     hrv_drop_score: number;
     resting_hr_score: number;
-    sleep_debt_score: number;
-    training_streak_score: number;
-    perceived_exertion_score: number;
+    sleep_score: number;
+    active_calories_score: number;
+    readiness_score?: number;
+    stress_score?: number;
+    resilience_score?: number;
   };
   weights: {
-    acwr: number;
     hrv: number;
     rhr: number;
     sleep: number;
-    streak: number;
     subjective: number;
+    readiness?: number;
+    stress?: number;
+    resilience?: number;
   };
   week_start: string;
   week_end: string;
@@ -43,6 +46,8 @@ interface StravaActivity {
   total_elevation_gain?: number;
   description?: string;
   suffer_score?: number;
+  calories?: number;
+  kilojoules?: number;
 }
 
 interface OuraSleepData {
@@ -50,6 +55,34 @@ interface OuraSleepData {
   average_hrv?: number;
   average_heart_rate?: number;
   total_sleep_duration?: number;
+  score?: number;
+}
+interface OuraReadinessData {
+  day: string;
+  score?: number;
+}
+
+interface OuraDailyActivityData {
+  day: string;
+  active_calories?: number;
+  total_calories?: number;
+}
+
+interface OuraResilienceData {
+  day: string;
+  contributors?: {
+    sleep_recovery?: number;
+    daytime_recovery?: number;
+    stress?: number;
+  };
+  level?: string;
+}
+
+interface OuraStressData {
+  day: string;
+  stress_high?: number;
+  recovery_high?: number;
+  day_summary?: string;
 }
 
 // Interface for the actual sleep endpoint data
@@ -75,11 +108,10 @@ export async function POST(req: NextRequest) {
       weights,
     }: BurnoutCalculationRequest = await req.json();
 
-    if (!start_date || !end_date || !access_token) {
+    if (!start_date || !end_date) {
       return NextResponse.json(
         {
-          error:
-            "Missing required parameters: start_date, end_date, access_token",
+          error: "Missing required parameters: start_date, end_date",
         },
         { status: 400 }
       );
@@ -87,55 +119,42 @@ export async function POST(req: NextRequest) {
 
     // Default weights if not provided
     const defaultWeights = {
-      acwr: 0.3,
       hrv: 0.2,
       rhr: 0.15,
       sleep: 0.2,
-      streak: 0.1,
-      subjective: 0.05,
+      subjective: 0.1,
+      readiness: 0.1,
+      stress: 0.15,
+      resilience: 0.1,
     };
 
     const finalWeights = { ...defaultWeights, ...weights };
 
     // Fetch Strava activities for the date range
-    const startTimestamp = Math.floor(new Date(start_date).getTime() / 1000);
-    const endTimestamp = Math.floor(new Date(end_date).getTime() / 1000);
-
-    const activitiesResponse = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=200`,
-      {
-        headers: {
-          Authorization: `Bearer ${access_token}`,
-        },
-      }
-    );
-
-    if (!activitiesResponse.ok) {
-      const errorText = await activitiesResponse.text();
-      return NextResponse.json(
-        { error: `Strava API error: ${errorText}` },
-        { status: activitiesResponse.status }
-      );
-    }
-
-    const activities: StravaActivity[] = await activitiesResponse.json();
-    console.log(
-      `Fetched ${activities.length} Strava activities for date range ${start_date} to ${end_date}`
-    );
+    // Strava dependency removed. Keep an empty activities array for compatibility with older code.
+    const activities: StravaActivity[] = [];
 
     // Fetch Oura sleep data for the same period
     const ouraToken = process.env.OURA_API_TOKEN;
     let sleepData: OuraSleepData[] = [];
+    let dailyActivityData: OuraDailyActivityData[] = [];
+    let readinessData: OuraReadinessData[] = [];
+    let stressData: OuraStressData[] = [];
+    let resilienceData: OuraResilienceData[] = [];
 
     if (ouraToken) {
       // Use correct Oura API v2 endpoints
       const dailySleepUrl = `https://api.ouraring.com/v2/usercollection/daily_sleep?start_date=${start_date}&end_date=${end_date}`;
       const sleepUrl = `https://api.ouraring.com/v2/usercollection/sleep?start_date=${start_date}&end_date=${end_date}`;
       const readinessUrl = `https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${start_date}&end_date=${end_date}`;
+      const dailyActivityUrl = `https://api.ouraring.com/v2/usercollection/daily_activity?start_date=${start_date}&end_date=${end_date}`;
+      const stressUrl = `https://api.ouraring.com/v2/usercollection/daily_stress?start_date=${start_date}&end_date=${end_date}`;
+      const resilienceUrl = `https://api.ouraring.com/v2/usercollection/daily_resilience?start_date=${start_date}&end_date=${end_date}`;
 
       console.log(`Fetching Oura daily sleep from: ${dailySleepUrl}`);
       console.log(`Fetching Oura sleep from: ${sleepUrl}`);
       console.log(`Fetching Oura readiness from: ${readinessUrl}`);
+      console.log(`Fetching Oura daily activity from: ${dailyActivityUrl}`);
 
       // Fetch daily sleep data
       const dailySleepResponse = await fetch(dailySleepUrl, {
@@ -161,10 +180,39 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Fetch daily activity data
+      const dailyActivityResponse = await fetch(dailyActivityUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${ouraToken}`,
+        },
+      });
+
+      // Fetch stress data
+      const stressResponse = await fetch(stressUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${ouraToken}`,
+        },
+      });
+
+      // Fetch resilience data
+      const resilienceResponse = await fetch(resilienceUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${ouraToken}`,
+        },
+      });
+
       // Log response statuses
       console.log(`Daily sleep response status: ${dailySleepResponse.status}`);
       console.log(`Sleep response status: ${sleepResponse.status}`);
       console.log(`Readiness response status: ${readinessResponse.status}`);
+      console.log(
+        `Daily activity response status: ${dailyActivityResponse.status}`
+      );
+      console.log(`Stress response status: ${stressResponse.status}`);
+      console.log(`Resilience response status: ${resilienceResponse.status}`);
 
       // Process daily sleep data - READ BODY ONLY ONCE
       if (dailySleepResponse.ok) {
@@ -205,6 +253,7 @@ export async function POST(req: NextRequest) {
           average_heart_rate: record.average_heart_rate,
           // total_sleep_duration is already in seconds in the sleep endpoint
           total_sleep_duration: record.total_sleep_duration,
+          score: (record as any).score,
         }));
 
         // Log sample processed data
@@ -234,9 +283,97 @@ export async function POST(req: NextRequest) {
             JSON.stringify(readinessRecords[0], null, 2)
           );
         }
+
+        readinessData = readinessRecords.map((record: any) => ({
+          day:
+            record.day ||
+            record.date ||
+            (record.timestamp
+              ? String(record.timestamp).split("T")[0]
+              : undefined),
+          score: record.score,
+        }));
       } else {
         const errorText = await readinessResponse.text();
         console.error("Oura readiness API error:", errorText);
+      }
+
+      // Process daily activity data - READ BODY ONLY ONCE
+      if (dailyActivityResponse.ok) {
+        const activityResult = await dailyActivityResponse.json();
+        const activityRecords = activityResult.data || [];
+        console.log(`Fetched ${activityRecords.length} daily activity records`);
+
+        if (activityRecords.length > 0) {
+          console.log(
+            "Sample daily activity record:",
+            JSON.stringify(activityRecords[0], null, 2)
+          );
+        }
+
+        dailyActivityData = activityRecords.map((record: any) => ({
+          day:
+            record.day ||
+            record.date ||
+            (record.timestamp
+              ? String(record.timestamp).split("T")[0]
+              : undefined),
+          active_calories:
+            record.active_calories ??
+            record.active_calories_total ??
+            record.cal_active,
+          total_calories: record.total_calories ?? record.cal_total,
+        }));
+      } else {
+        const errorText = await dailyActivityResponse.text();
+        console.error("Oura daily activity API error:", errorText);
+      }
+
+      // Process stress data - READ BODY ONLY ONCE
+      if (stressResponse.ok) {
+        const stressResult = await stressResponse.json();
+        const stressRecords = stressResult.data || [];
+        console.log(`Fetched ${stressRecords.length} stress records`);
+
+        if (stressRecords.length > 0) {
+          console.log(
+            "Sample stress record:",
+            JSON.stringify(stressRecords[0], null, 2)
+          );
+        }
+
+        stressData = stressRecords.map((record: any) => ({
+          day: record.day,
+          stress_high: record.stress_high,
+          recovery_high: record.recovery_high,
+          day_summary: record.day_summary,
+        }));
+      } else {
+        const errorText = await stressResponse.text();
+        console.error("Oura stress API error:", errorText);
+      }
+
+      // Process resilience data - READ BODY ONLY ONCE
+      if (resilienceResponse.ok) {
+        const resilienceResult = await resilienceResponse.json();
+        const resilienceRecords = resilienceResult.data || [];
+        console.log(`Fetched ${resilienceRecords.length} resilience records`);
+
+        if (resilienceRecords.length > 0) {
+          console.log(
+            "Sample resilience record:",
+            JSON.stringify(resilienceRecords[0], null, 2)
+          );
+        }
+
+        resilienceData = resilienceRecords.map((record: any) => ({
+          day: record.day,
+          contributors: record.contributors,
+          level: record.level,
+        }));
+      } else {
+        const errorText = await resilienceResponse.text();
+        console.error("Oura resilience API error:", errorText);
       }
     } else {
       console.log("No Oura API token found");
@@ -275,32 +412,62 @@ export async function POST(req: NextRequest) {
         return sleepDate >= weekStart && sleepDate <= weekEnd;
       });
 
+      // Filter Oura daily activity for this week
+      const weekActivityData = dailyActivityData.filter(
+        (act: OuraDailyActivityData) => {
+          const actDate = new Date(act.day);
+          return actDate >= weekStart && actDate <= weekEnd;
+        }
+      );
+
+      const weekReadinessData = readinessData.filter((r: OuraReadinessData) => {
+        const rDate = new Date(r.day);
+        return rDate >= weekStart && rDate <= weekEnd;
+      });
+
+      // Filter stress data for this week
+      const weekStressData = stressData.filter((stress: OuraStressData) => {
+        const stressDate = new Date(stress.day);
+        return stressDate >= weekStart && stressDate <= weekEnd;
+      });
+
+      // Filter resilience data for this week
+      const weekResilienceData = resilienceData.filter(
+        (resilience: OuraResilienceData) => {
+          const resilienceDate = new Date(resilience.day);
+          return resilienceDate >= weekStart && resilienceDate <= weekEnd;
+        }
+      );
+
       // Calculate individual scores
-      const acwrScore = calculateACWRScore(weekActivities, weekStart);
       const hrvScore = calculateHRVDropScore(weekSleepData);
       const rhrScore = calculateRestingHRScore(weekSleepData);
-      const sleepScore = calculateSleepDebtScore(weekSleepData);
-      const streakScore = calculateTrainingStreakScore(weekActivities);
-      const subjectiveScore = calculatePerceivedExertionScore(weekActivities);
+      const sleepScore = calculateSleepScoreRisk(weekSleepData);
+      const subjectiveScore = calculateOuraCaloriesScore(weekActivityData);
+      const readinessScore = calculateReadinessRisk(weekReadinessData);
+      const stressScore = calculateStressScore(weekStressData);
+      const resilienceScore = calculateResilienceScore(weekResilienceData);
 
       // Calculate total score
       const totalScore =
-        finalWeights.acwr * acwrScore +
         finalWeights.hrv * hrvScore +
         finalWeights.rhr * rhrScore +
         finalWeights.sleep * sleepScore +
-        finalWeights.streak * streakScore +
-        finalWeights.subjective * subjectiveScore;
+        finalWeights.subjective * subjectiveScore +
+        (finalWeights.readiness || 0) * readinessScore +
+        (finalWeights.stress || 0) * stressScore +
+        (finalWeights.resilience || 0) * resilienceScore;
 
       weeklyScores.push({
         total_score: Math.round(totalScore * 100) / 100,
         breakdown: {
-          acwr_score: Math.round(acwrScore * 100) / 100,
           hrv_drop_score: Math.round(hrvScore * 100) / 100,
           resting_hr_score: Math.round(rhrScore * 100) / 100,
-          sleep_debt_score: Math.round(sleepScore * 100) / 100,
-          training_streak_score: Math.round(streakScore * 100) / 100,
-          perceived_exertion_score: Math.round(subjectiveScore * 100) / 100,
+          sleep_score: Math.round(sleepScore * 100) / 100,
+          active_calories_score: Math.round(subjectiveScore * 100) / 100,
+          readiness_score: Math.round(readinessScore * 100) / 100,
+          stress_score: Math.round(stressScore * 100) / 100,
+          resilience_score: Math.round(resilienceScore * 100) / 100,
         },
         weights: finalWeights,
         week_start: weekStartStr,
@@ -442,29 +609,21 @@ function calculateRestingHRScore(sleepData: OuraSleepData[]): number {
   return Math.min(elevatedRHR / rhrValues.length, 1.0);
 }
 
-function calculateSleepDebtScore(sleepData: OuraSleepData[]): number {
-  console.log(`Calculating sleep debt for ${sleepData.length} sleep records`);
+function calculateSleepScoreRisk(sleepData: OuraSleepData[]): number {
+  console.log(
+    `Calculating sleep score risk for ${sleepData.length} sleep records`
+  );
   if (sleepData.length === 0) return 0;
 
-  const targetSleepHours = 8;
-  const sleepDurations = sleepData
-    .map((sleep: OuraSleepData) =>
-      sleep.total_sleep_duration ? sleep.total_sleep_duration / 3600 : 0
-    ) // Convert seconds to hours
-    .filter((duration: number) => duration > 0);
+  const scores = sleepData
+    .map((s) => (typeof s.score === "number" ? s.score : undefined))
+    .filter((v): v is number => typeof v === "number");
 
-  console.log(`Valid sleep durations: ${sleepDurations.length}`);
+  if (scores.length === 0) return 0;
 
-  if (sleepDurations.length === 0) return 0;
-
-  const sleepDebt = sleepDurations.reduce(
-    (total: number, duration: number) =>
-      total + Math.max(0, targetSleepHours - duration),
-    0
-  );
-
-  console.log(`Total sleep debt: ${sleepDebt} hours`);
-  return Math.min(sleepDebt / (sleepDurations.length * targetSleepHours), 1.0);
+  const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length; // 0–100
+  // Risk is inverse of score, normalized 0–1
+  return Math.max(0, Math.min(1, (100 - avgScore) / 100));
 }
 
 function calculateTrainingStreakScore(activities: StravaActivity[]): number {
@@ -504,20 +663,85 @@ function calculateTrainingStreakScore(activities: StravaActivity[]): number {
   return 0.1;
 }
 
-function calculatePerceivedExertionScore(activities: StravaActivity[]): number {
-  if (activities.length === 0) return 0;
+function calculateOuraCaloriesScore(
+  activityData: OuraDailyActivityData[]
+): number {
+  if (activityData.length === 0) return 0;
 
-  // Look for RPE in activity descriptions or use suffer score as proxy
-  const highEffortActivities = activities.filter((activity: StravaActivity) => {
-    const description = (activity.description || "").toLowerCase();
-    const hasRPE =
-      description.includes("rpe") ||
-      description.includes("rate of perceived exertion");
-    const highSufferScore =
-      activity.suffer_score && activity.suffer_score > 100;
+  const totalActiveCalories = activityData
+    .map((d) => (typeof d.active_calories === "number" ? d.active_calories : 0))
+    .reduce((a, b) => a + b, 0);
 
-    return hasRPE || highSufferScore;
+  if (totalActiveCalories <= 0) return 0;
+
+  // Normalize to a weekly threshold; 5000 active kcal/week → score 1.0
+  const weeklyHighCalories = 5000;
+  return Math.min(totalActiveCalories / weeklyHighCalories, 1.0);
+}
+
+function calculateReadinessRisk(readinessData: OuraReadinessData[]): number {
+  if (readinessData.length === 0) return 0;
+  const scores = readinessData
+    .map((r) => (typeof r.score === "number" ? r.score : undefined))
+    .filter((v): v is number => typeof v === "number");
+  if (scores.length === 0) return 0;
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+  // Inverse mapping: low readiness → high risk
+  return Math.max(0, Math.min(1, (100 - avg) / 100));
+}
+
+function calculateStressScore(stressData: OuraStressData[]): number {
+  console.log(
+    `Calculating stress score for ${stressData.length} stress records`
+  );
+  if (stressData.length === 0) return 0;
+
+  // Calculate average stress_high duration and convert to percentage
+  const stressHighValues = stressData
+    .map((stress: OuraStressData) => stress.stress_high)
+    .filter(
+      (value: number | undefined) => typeof value === "number"
+    ) as number[];
+
+  if (stressHighValues.length === 0) return 0;
+
+  const avgStressSeconds =
+    stressHighValues.reduce((sum, val) => sum + val, 0) /
+    stressHighValues.length;
+
+  // Convert from seconds to percentage of day (86400 seconds = 24 hours)
+  const secondsInDay = 24 * 60 * 60;
+  const avgStressPercentage = (avgStressSeconds / secondsInDay) * 100;
+
+  // Normalize stress percentage (0-100%) to risk score (0-1)
+  // Higher stress percentage = higher risk
+  return Math.min(avgStressPercentage / 100, 1.0);
+}
+
+function calculateResilienceScore(
+  resilienceData: OuraResilienceData[]
+): number {
+  console.log(
+    `Calculating resilience score for ${resilienceData.length} resilience records`
+  );
+  if (resilienceData.length === 0) return 0;
+
+  // Map resilience levels to risk scores
+  const levelRiskMap: { [key: string]: number } = {
+    exceptional: 0.0,
+    solid: 0.2,
+    adequate: 0.4,
+    limited: 0.8,
+    compromised: 1.0,
+  };
+
+  const riskScores = resilienceData.map((resilience: OuraResilienceData) => {
+    const level = resilience.level?.toLowerCase() || "limited";
+    return levelRiskMap[level] ?? 0.6; // Default to moderate risk if unknown level
   });
 
-  return Math.min(highEffortActivities.length / activities.length, 1.0);
+  if (riskScores.length === 0) return 0;
+
+  // Average risk across all resilience records
+  return riskScores.reduce((sum, score) => sum + score, 0) / riskScores.length;
 }
