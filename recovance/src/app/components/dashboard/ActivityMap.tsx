@@ -82,12 +82,21 @@ export default function ActivityMap({ activities }: ActivityMapProps) {
 
   // Set Mapbox access token from environment variable
   const mapboxToken = process.env.NEXT_PUBLIC_MAP_BOX_API;
-  if (mapboxToken) {
-    mapboxgl.accessToken = mapboxToken;
-  }
 
   useEffect(() => {
-    if (map.current || !mapContainer.current || !mapboxToken) return;
+    if (typeof window !== "undefined" && mapboxToken) {
+      mapboxgl.accessToken = mapboxToken;
+    }
+  }, [mapboxToken]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      map.current ||
+      !mapContainer.current ||
+      !mapboxToken
+    )
+      return;
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,

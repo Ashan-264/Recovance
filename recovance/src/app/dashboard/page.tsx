@@ -10,8 +10,31 @@ import {
   AISuggestions,
   ActionButtons,
 } from "@/app/components/dashboard";
-import ActivityMap from "@/app/components/dashboard/ActivityMap";
-import LeafletDarkFlatMap from "@/app/components/dashboard/LeafletDarkFlatMap";
+import dynamic from "next/dynamic";
+
+const ActivityMap = dynamic(
+  () => import("@/app/components/dashboard/ActivityMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-96 bg-[#1e2a28] rounded-lg flex items-center justify-center">
+        <p className="text-gray-400">Loading map...</p>
+      </div>
+    ),
+  }
+);
+
+const LeafletDarkFlatMap = dynamic(
+  () => import("@/app/components/dashboard/LeafletDarkFlatMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-96 bg-[#1e2a28] rounded-lg flex items-center justify-center">
+        <p className="text-gray-400">Loading map...</p>
+      </div>
+    ),
+  }
+);
 
 interface StravaActivity {
   id: number;

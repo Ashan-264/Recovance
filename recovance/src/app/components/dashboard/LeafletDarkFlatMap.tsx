@@ -18,20 +18,10 @@ interface Props {
   activities: StravaActivity[];
 }
 
-// Fix default icon path (vite/next may not resolve automatically)
 // Fix for default Leaflet markers
 interface LeafletIconDefault extends L.Icon.Default {
   _getIconUrl?: () => string;
 }
-delete (L.Icon.Default.prototype as LeafletIconDefault)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-});
 
 export default function LeafletDarkFlatMap({ activities }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -45,7 +35,19 @@ export default function LeafletDarkFlatMap({ activities }: Props) {
     (lat !== 0 || lng !== 0);
 
   useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return;
+    if (typeof window === "undefined" || !mapRef.current || mapInstance.current)
+      return;
+
+    // Fix default Leaflet icon paths
+    delete (L.Icon.Default.prototype as LeafletIconDefault)._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+      iconUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+      shadowUrl:
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    });
 
     mapInstance.current = L.map(mapRef.current, {
       center: [0, 0],
