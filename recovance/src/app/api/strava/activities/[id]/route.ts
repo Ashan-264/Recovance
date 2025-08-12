@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const resolvedParams = await params;
     const access_token = req.headers.get("Authorization")?.split("Bearer ")[1];
 
     if (!access_token) {
@@ -14,7 +15,7 @@ export async function GET(
       );
     }
 
-    if (!params.id) {
+    if (!resolvedParams.id) {
       return NextResponse.json(
         { error: "Missing activity ID" },
         { status: 400 }
@@ -22,7 +23,7 @@ export async function GET(
     }
 
     const response = await fetch(
-      `https://www.strava.com/api/v3/activities/${params.id}`,
+      `https://www.strava.com/api/v3/activities/${resolvedParams.id}`,
       {
         headers: {
           Authorization: `Bearer ${access_token}`,
