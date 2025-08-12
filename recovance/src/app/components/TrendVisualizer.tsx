@@ -163,32 +163,56 @@ export default function TrendVisualizer() {
       const startDate = dates[0];
       const endDate = dates[dates.length - 1];
 
+      // For debugging, let's also try a wider date range to ensure we catch some activities
+      const widerStartDate = new Date();
+      widerStartDate.setDate(widerStartDate.getDate() - 90); // Last 90 days
+      const widerStart = widerStartDate.toISOString().split("T")[0];
+
+      console.log("Chart date range:", startDate, "to", endDate);
+      console.log("Fetch date range:", widerStart, "to", endDate);
+
       // Fetch Strava data
       let stravaActivities: StravaActivity[] = [];
       const stravaToken = getStravaToken();
 
       if (stravaToken) {
         try {
+          console.log(
+            "Fetching Strava activities with token:",
+            stravaToken.substring(0, 10) + "..."
+          );
+          console.log("Date range:", startDate, "to", endDate);
+
           const stravaResponse = await fetch("/api/strava/activities", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               access_token: stravaToken,
-              start_date: startDate,
+              start_date: widerStart,
               end_date: endDate,
             }),
           });
+
+          console.log("Strava API response status:", stravaResponse.status);
+
           if (stravaResponse.ok) {
             const stravaData = await stravaResponse.json();
             stravaActivities = stravaData.activities || [];
             console.log(`Fetched ${stravaActivities.length} Strava activities`);
             if (stravaActivities.length > 0) {
               console.log("Sample activity:", stravaActivities[0]);
+            } else {
+              console.log("No Strava activities found for the date range");
             }
+          } else {
+            const errorText = await stravaResponse.text();
+            console.error("Strava API error:", errorText);
           }
         } catch (error) {
           console.warn("Failed to fetch Strava data:", error);
         }
+      } else {
+        console.log("No Strava token available");
       }
 
       // Fetch Oura readiness data
@@ -254,6 +278,19 @@ export default function TrendVisualizer() {
               ).toFixed(1)} min (${activity.type})`
             );
           });
+        } else {
+          // Check if there are any activities for this general date period
+          const dayActivitiesDebug = stravaActivities.filter((activity) => {
+            if (!activity.start_date_local) return false;
+            return activity.start_date_local.includes(date.substring(0, 7)); // Match year-month
+          });
+          if (dayActivitiesDebug.length > 0) {
+            console.log(
+              `${date}: No activities on this exact date, but found ${
+                dayActivitiesDebug.length
+              } activities in ${date.substring(0, 7)}`
+            );
+          }
         }
 
         // Get readiness score for this date
@@ -277,6 +314,30 @@ export default function TrendVisualizer() {
       });
 
       setTrendData(processedData);
+
+      // If no activity data was found, log summary
+      const totalActivityMinutes = processedData.reduce(
+        (sum, day) => sum + day.activityMinutes,
+        0
+      );
+      console.log(
+        `Total activity minutes across all days: ${totalActivityMinutes}`
+      );
+      console.log(
+        `Days with activity: ${
+          processedData.filter((day) => day.activityMinutes > 0).length
+        }`
+      );
+      console.log(
+        `Days with readiness: ${
+          processedData.filter((day) => day.readinessScore > 0).length
+        }`
+      );
+      console.log(
+        `Days with sleep: ${
+          processedData.filter((day) => day.sleepScore > 0).length
+        }`
+      );
     } catch (error) {
       console.error("Error fetching trend data:", error);
     } finally {
