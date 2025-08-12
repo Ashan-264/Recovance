@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
   Filler,
+  TooltipItem,
 } from "chart.js";
 
 ChartJS.register(
@@ -58,7 +59,7 @@ export default function ChartLine({
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (ctx: any) => `${ctx.parsed.y}`,
+          label: (ctx: TooltipItem<"line">) => `${ctx.parsed.y}`,
         },
       },
     },

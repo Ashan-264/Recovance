@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import ChartLine from "./ChartLine";
 
 interface OuraSleepData {
@@ -131,7 +131,7 @@ export default function OuraInsights({
   };
 
   // Aggregate sleep data by day (combine multiple sleep sessions per day)
-  const aggregateSleepByDay = (rawSleepData: any[]) => {
+  const aggregateSleepByDay = (rawSleepData: OuraSleepData[]) => {
     const dailyAggregates: { [key: string]: OuraSleepData } = {};
 
     rawSleepData.forEach((session) => {
@@ -175,244 +175,6 @@ export default function OuraInsights({
     // Convert to array and sort by date
     return Object.values(dailyAggregates).sort(
       (a, b) => new Date(a.day).getTime() - new Date(b.day).getTime()
-    );
-  };
-
-  const createLineChart = (
-    data: any[],
-    valueKey: string,
-    color: string,
-    formatValue: (val: number) => string,
-    yAxisLabel: string
-  ) => {
-    if (data.length === 0)
-      return (
-        <div className="text-gray-400 text-center py-8">No data available</div>
-      );
-
-    // Trim leading and trailing zero-value points to avoid center clustering
-    let start = 0;
-    let end = data.length - 1;
-    while (start < data.length && (data[start][valueKey] || 0) === 0) start++;
-    while (end > start && (data[end][valueKey] || 0) === 0) end--;
-    const chartData = data.slice(start, end + 1);
-
-    const values = chartData.map((d) => d[valueKey] || 0).filter((v) => v > 0);
-    const maxValue = values.length > 0 ? Math.max(...values) : 0;
-    const minValue = values.length > 0 ? Math.min(...values) : 0;
-
-    // If all values are zero, use a small range for better visualization
-    let range = maxValue - minValue;
-    let effectiveMax = maxValue;
-    let effectiveMin = minValue;
-
-    if (range === 0) {
-      if (maxValue === 0) {
-        // All values are zero, use a small range
-        effectiveMax = 1;
-        effectiveMin = 0;
-        range = 1;
-      } else {
-        // All values are the same non-zero value
-        effectiveMax = maxValue * 1.1;
-        effectiveMin = 0;
-        range = effectiveMax;
-      }
-    } else {
-      // Add some padding to the range for better visualization
-      const padding = range * 0.1;
-      effectiveMax = maxValue + padding;
-      effectiveMin = Math.max(0, minValue - padding);
-      range = effectiveMax - effectiveMin;
-    }
-
-    // Generate Y-axis labels
-    const yAxisLabels = [];
-    const numLabels = 5;
-    for (let i = 0; i <= numLabels; i++) {
-      const value = effectiveMin + (range * i) / numLabels;
-      yAxisLabels.push(formatValue(value));
-    }
-
-    const points = chartData
-      .map((item, index) => {
-        const value = item[valueKey] || 0;
-        const percentage =
-          range > 0 ? ((value - effectiveMin) / range) * 100 : 50;
-        const x = (index / (chartData.length - 1)) * 100;
-        const y = 100 - percentage;
-        return `${x},${y}`;
-      })
-      .join(" ");
-
-    return (
-      <div className="relative">
-        {/* Y-axis labels */}
-        <div className="absolute left-0 top-0 bottom-0 w-12 flex flex-col justify-between text-xs text-gray-400">
-          {yAxisLabels.reverse().map((label, index) => (
-            <div key={index} className="text-right pr-2">
-              {label}
-            </div>
-          ))}
-        </div>
-
-        {/* Chart container with padding for Y-axis */}
-        <div className="ml-12">
-          <svg width="100%" height="120" viewBox="0 0 100 100" className="mt-4">
-            {/* Grid lines */}
-            {yAxisLabels.map((_, index) => {
-              const y = (index / (yAxisLabels.length - 1)) * 100;
-              return (
-                <line
-                  key={index}
-                  x1="0"
-                  y1={y}
-                  x2="100"
-                  y2={y}
-                  stroke="#3b5450"
-                  strokeWidth="0.5"
-                  opacity="0.3"
-                />
-              );
-            })}
-
-            {/* Chart line */}
-            <polyline
-              fill="none"
-              stroke={color}
-              strokeWidth="2"
-              points={points}
-            />
-
-            {/* Data points */}
-            {chartData.map((item, index) => {
-              const value = item[valueKey] || 0;
-              const percentage =
-                range > 0 ? ((value - effectiveMin) / range) * 100 : 50;
-              const x = (index / (chartData.length - 1)) * 100;
-              const y = 100 - percentage;
-              return (
-                <circle
-                  key={index}
-                  cx={x}
-                  cy={y}
-                  r="3"
-                  fill={color}
-                  stroke="#111817"
-                  strokeWidth="1"
-                >
-                  <title>{`${formatValue(value)} on ${formatDate(
-                    item.day
-                  )}`}</title>
-                </circle>
-              );
-            })}
-          </svg>
-
-          {/* X-axis labels */}
-          <div className="flex justify-between text-xs text-gray-400 mt-2">
-            {chartData.map((item, index) => (
-              <div key={index} className="text-center">
-                {formatDate(item.day)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const createBarChart = (
-    data: any[],
-    valueKey: string,
-    color: string,
-    formatValue: (val: number) => string,
-    yAxisLabel: string
-  ) => {
-    if (data.length === 0)
-      return (
-        <div className="text-gray-400 text-center py-8">No data available</div>
-      );
-
-    const values = data.map((d) => d[valueKey] || 0).filter((v) => v > 0);
-    const maxValue = values.length > 0 ? Math.max(...values) : 0;
-
-    // If all values are zero, use a small range for better visualization
-    let effectiveMax = maxValue;
-    if (maxValue === 0) {
-      effectiveMax = 1;
-    } else {
-      // Add some padding to the range for better visualization
-      effectiveMax = maxValue * 1.1;
-    }
-
-    // Generate Y-axis labels
-    const yAxisLabels = [];
-    const numLabels = 5;
-    for (let i = 0; i <= numLabels; i++) {
-      const value = (effectiveMax * i) / numLabels;
-      yAxisLabels.push(formatValue(value));
-    }
-
-    return (
-      <div className="relative">
-        {/* Y-axis labels */}
-        <div className="absolute left-0 top-0 bottom-0 w-12 flex flex-col justify-between text-xs text-gray-400">
-          {yAxisLabels.reverse().map((label, index) => (
-            <div key={index} className="text-right pr-2">
-              {label}
-            </div>
-          ))}
-        </div>
-
-        {/* Chart container with padding for Y-axis */}
-        <div className="ml-12">
-          <div className="relative h-24 mt-4">
-            {/* Grid lines */}
-            {yAxisLabels.map((_, index) => {
-              const y = (index / (yAxisLabels.length - 1)) * 100;
-              return (
-                <div
-                  key={index}
-                  className="absolute left-0 right-0 border-t border-[#3b5450] opacity-30"
-                  style={{ top: `${y}%` }}
-                />
-              );
-            })}
-
-            {/* Bars */}
-            <div className="flex items-end justify-between h-full px-2">
-              {data.map((item, index) => {
-                const value = item[valueKey] || 0;
-                const height =
-                  effectiveMax > 0 ? (value / effectiveMax) * 100 : 0;
-                return (
-                  <div key={index} className="flex flex-col items-center">
-                    <div
-                      className="w-3 rounded-t transition-all duration-200 hover:opacity-80"
-                      style={{
-                        height: `${height}%`,
-                        backgroundColor: color,
-                        minHeight: "4px",
-                      }}
-                      title={`${formatValue(value)} on ${formatDate(item.day)}`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* X-axis labels */}
-          <div className="flex justify-between text-xs text-gray-400 mt-2">
-            {data.map((item, index) => (
-              <div key={index} className="text-center">
-                {formatDate(item.day)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     );
   };
 
@@ -551,7 +313,8 @@ export default function OuraInsights({
           )}
           {sleepData.length === 0 && (
             <span>
-              No sleep data loaded. Click "Load Oura Data" button above.
+              No sleep data loaded. Click &quot;Load Oura Data&quot; button
+              above.
             </span>
           )}
         </div>

@@ -39,17 +39,6 @@ interface BurnoutScore {
   week_end: string;
 }
 
-interface StravaActivity {
-  id: number;
-  start_date: string;
-  distance?: number;
-  total_elevation_gain?: number;
-  description?: string;
-  suffer_score?: number;
-  calories?: number;
-  kilojoules?: number;
-}
-
 interface OuraSleepData {
   day: string;
   average_hrv?: number;
@@ -104,7 +93,7 @@ export async function POST(req: NextRequest) {
     const {
       start_date,
       end_date,
-      access_token,
+      // access_token, // Removed Strava dependency
       weights,
     }: BurnoutCalculationRequest = await req.json();
 
@@ -132,7 +121,6 @@ export async function POST(req: NextRequest) {
 
     // Fetch Strava activities for the date range
     // Strava dependency removed. Keep an empty activities array for compatibility with older code.
-    const activities: StravaActivity[] = [];
 
     // Fetch Oura sleep data for the same period
     const ouraToken = process.env.OURA_API_TOKEN;
@@ -253,7 +241,7 @@ export async function POST(req: NextRequest) {
           average_heart_rate: record.average_heart_rate,
           // total_sleep_duration is already in seconds in the sleep endpoint
           total_sleep_duration: record.total_sleep_duration,
-          score: (record as any).score,
+          score: (record as OuraSleepData & { score?: number }).score,
         }));
 
         // Log sample processed data
@@ -284,15 +272,19 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        readinessData = readinessRecords.map((record: any) => ({
-          day:
-            record.day ||
-            record.date ||
-            (record.timestamp
-              ? String(record.timestamp).split("T")[0]
-              : undefined),
-          score: record.score,
-        }));
+        readinessData = readinessRecords.map(
+          (
+            record: OuraReadinessData & { date?: string; timestamp?: string }
+          ) => ({
+            day:
+              record.day ||
+              record.date ||
+              (record.timestamp
+                ? String(record.timestamp).split("T")[0]
+                : undefined),
+            score: record.score,
+          })
+        );
       } else {
         const errorText = await readinessResponse.text();
         console.error("Oura readiness API error:", errorText);
@@ -311,19 +303,29 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        dailyActivityData = activityRecords.map((record: any) => ({
-          day:
-            record.day ||
-            record.date ||
-            (record.timestamp
-              ? String(record.timestamp).split("T")[0]
-              : undefined),
-          active_calories:
-            record.active_calories ??
-            record.active_calories_total ??
-            record.cal_active,
-          total_calories: record.total_calories ?? record.cal_total,
-        }));
+        dailyActivityData = activityRecords.map(
+          (
+            record: OuraDailyActivityData & {
+              date?: string;
+              timestamp?: string;
+              active_calories_total?: number;
+              cal_active?: number;
+              cal_total?: number;
+            }
+          ) => ({
+            day:
+              record.day ||
+              record.date ||
+              (record.timestamp
+                ? String(record.timestamp).split("T")[0]
+                : undefined),
+            active_calories:
+              record.active_calories ??
+              record.active_calories_total ??
+              record.cal_active,
+            total_calories: record.total_calories ?? record.cal_total,
+          })
+        );
       } else {
         const errorText = await dailyActivityResponse.text();
         console.error("Oura daily activity API error:", errorText);
@@ -342,7 +344,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        stressData = stressRecords.map((record: any) => ({
+        stressData = stressRecords.map((record: OuraStressData) => ({
           day: record.day,
           stress_high: record.stress_high,
           recovery_high: record.recovery_high,
@@ -366,11 +368,13 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        resilienceData = resilienceRecords.map((record: any) => ({
-          day: record.day,
-          contributors: record.contributors,
-          level: record.level,
-        }));
+        resilienceData = resilienceRecords.map(
+          (record: OuraResilienceData) => ({
+            day: record.day,
+            contributors: record.contributors,
+            level: record.level,
+          })
+        );
       } else {
         const errorText = await resilienceResponse.text();
         console.error("Oura resilience API error:", errorText);
@@ -400,11 +404,7 @@ export async function POST(req: NextRequest) {
       const weekStartStr = weekStart.toISOString().split("T")[0];
       const weekEndStr = weekEnd.toISOString().split("T")[0];
 
-      // Filter activities for this week
-      const weekActivities = activities.filter((activity: StravaActivity) => {
-        const activityDate = new Date(activity.start_date);
-        return activityDate >= weekStart && activityDate <= weekEnd;
-      });
+      // Filter activities for this week - removed due to Strava dependency removal
 
       // Filter sleep data for this week
       const weekSleepData = sleepData.filter((sleep: OuraSleepData) => {
@@ -501,68 +501,6 @@ export async function POST(req: NextRequest) {
 }
 
 // Helper functions for calculating individual scores
-function calculateACWRScore(
-  activities: StravaActivity[],
-  weekStart: Date
-): number {
-  console.log(
-    `Calculating ACWR for ${
-      activities.length
-    } activities, week starting: ${weekStart.toISOString()}`
-  );
-  if (activities.length === 0) return 0;
-
-  // Calculate 7-day and 28-day average loads from the week start date
-  const sevenDaysAgo = new Date(weekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const twentyEightDaysAgo = new Date(
-    weekStart.getTime() - 28 * 24 * 60 * 60 * 1000
-  );
-
-  const sevenDayActivities = activities.filter(
-    (activity: StravaActivity) => new Date(activity.start_date) >= sevenDaysAgo
-  );
-  const twentyEightDayActivities = activities.filter(
-    (activity: StravaActivity) =>
-      new Date(activity.start_date) >= twentyEightDaysAgo
-  );
-
-  console.log(
-    `7-day activities: ${sevenDayActivities.length}, 28-day activities: ${twentyEightDayActivities.length}`
-  );
-
-  const sevenDayLoad =
-    sevenDayActivities.reduce(
-      (sum: number, activity: StravaActivity) =>
-        sum +
-        (activity.total_elevation_gain || 0) +
-        (activity.distance || 0) * 0.1,
-      0
-    ) / 7;
-
-  const twentyEightDayLoad =
-    twentyEightDayActivities.reduce(
-      (sum: number, activity: StravaActivity) =>
-        sum +
-        (activity.total_elevation_gain || 0) +
-        (activity.distance || 0) * 0.1,
-      0
-    ) / 28;
-
-  console.log(
-    `7-day load: ${sevenDayLoad}, 28-day load: ${twentyEightDayLoad}`
-  );
-
-  if (twentyEightDayLoad === 0) return 0;
-
-  const acwr = sevenDayLoad / twentyEightDayLoad;
-  console.log(`ACWR ratio: ${acwr}`);
-
-  // Score based on ACWR ranges: 0.8-1.3 is optimal, >1.5 is high risk
-  if (acwr < 0.8) return 0.3; // Low load
-  if (acwr <= 1.3) return 0.1; // Optimal
-  if (acwr <= 1.5) return 0.6; // Moderate risk
-  return 1.0; // High risk
-}
 
 function calculateHRVDropScore(sleepData: OuraSleepData[]): number {
   console.log(`Calculating HRV drop for ${sleepData.length} sleep records`);
@@ -624,43 +562,6 @@ function calculateSleepScoreRisk(sleepData: OuraSleepData[]): number {
   const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length; // 0–100
   // Risk is inverse of score, normalized 0–1
   return Math.max(0, Math.min(1, (100 - avgScore) / 100));
-}
-
-function calculateTrainingStreakScore(activities: StravaActivity[]): number {
-  if (activities.length === 0) return 0;
-
-  // Sort activities by date
-  const sortedActivities = activities.sort(
-    (a: StravaActivity, b: StravaActivity) =>
-      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-  );
-
-  let currentStreak = 0;
-  let maxStreak = 0;
-  const currentDate = new Date();
-
-  for (let i = 0; i < 30; i++) {
-    // Check last 30 days
-    const checkDate = new Date(currentDate.getTime() - i * 24 * 60 * 60 * 1000);
-    const dayActivities = sortedActivities.filter(
-      (activity: StravaActivity) => {
-        const activityDate = new Date(activity.start_date);
-        return activityDate.toDateString() === checkDate.toDateString();
-      }
-    );
-
-    if (dayActivities.length > 0) {
-      currentStreak++;
-      maxStreak = Math.max(maxStreak, currentStreak);
-    } else {
-      currentStreak = 0;
-    }
-  }
-
-  // Score based on streak length: 0-3 days = high risk, 4-6 = moderate, 7+ = low risk
-  if (maxStreak <= 3) return 1.0;
-  if (maxStreak <= 6) return 0.5;
-  return 0.1;
 }
 
 function calculateOuraCaloriesScore(

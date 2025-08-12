@@ -84,30 +84,74 @@ interface ReadinessDataItem {
 
 interface BurnoutScore {
   total_score: number;
-  breakdown: {
-    acwr_score: number;
-    hrv_drop_score: number;
-    resting_hr_score: number;
-    sleep_debt_score: number;
-    training_streak_score: number;
-    perceived_exertion_score: number;
-    readiness_score?: number;
-    stress_score?: number;
-    resilience_score?: number;
-  };
-  weights: {
-    acwr: number;
-    hrv: number;
-    rhr: number;
-    sleep: number;
-    streak: number;
-    subjective: number;
-    readiness?: number;
-    stress?: number;
-    resilience?: number;
-  };
   week_start: string;
   week_end: string;
+}
+
+interface OuraDailySleepRecord {
+  id: string;
+  day: string;
+  score?: number;
+  total_sleep_duration?: number;
+  deep_sleep_duration?: number;
+  rem_sleep_duration?: number;
+  light_sleep_duration?: number;
+  awake_time?: number;
+  efficiency?: number;
+  latency?: number;
+  time_in_bed?: number;
+  bedtime_start?: string;
+  bedtime_end?: string;
+}
+
+interface OuraDailyActivityRecord {
+  id?: string;
+  day?: string;
+  date?: string;
+  timestamp?: string;
+  active_calories?: number;
+  active_calories_total?: number;
+  cal_active?: number;
+  equivalent_walking_distance?: number;
+  high?: number;
+  inactive?: number;
+  inactivity_alerts?: number;
+  low?: number;
+  medium?: number;
+  met_min_high?: number;
+  met_min_inactive?: number;
+  met_min_low?: number;
+  met_min_medium?: number;
+}
+
+interface OuraStressRecord {
+  id?: string;
+  day: string;
+  stress_high?: number;
+  recovery_high?: number;
+  day_summary?: string;
+}
+
+interface OuraResilienceRecord {
+  id?: string;
+  day: string;
+  level?: string;
+  contributors?: {
+    sleep_recovery?: number;
+    daytime_recovery?: number;
+    stress?: number;
+  };
+}
+
+interface OuraReadinessRecord {
+  id?: string;
+  day?: string;
+  date?: string;
+  timestamp?: string;
+  score?: number;
+  temperature_deviation?: number;
+  temperature_trend_deviation?: number;
+  contributors?: Record<string, number>;
 }
 
 interface BurnoutSummary {
@@ -115,22 +159,6 @@ interface BurnoutSummary {
   highest_score: number;
   lowest_score: number;
   total_weeks: number;
-}
-
-interface StravaActivity {
-  id: number;
-  start_date: string;
-  distance: number;
-  total_elevation_gain: number;
-  description?: string;
-  suffer_score?: number;
-  calories?: number;
-  kilojoules?: number;
-}
-
-interface DailyExertion {
-  count: number;
-  highEffort: number;
 }
 
 export default function RecoveryPage() {
@@ -150,7 +178,7 @@ export default function RecoveryPage() {
 
   // Burnout calculation state
   // Strava removed – no access token needed
-  const [stravaAccessToken, setStravaAccessToken] = useState("");
+
   const [burnoutScores, setBurnoutScores] = useState<BurnoutScore[]>([]);
   const [burnoutSummary, setBurnoutSummary] = useState<BurnoutSummary | null>(
     null
@@ -166,26 +194,13 @@ export default function RecoveryPage() {
     resilience: 0.1,
   });
 
-  // State for showing daily details
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(
-    null
-  );
-  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
-  const [dailyDetails, setDailyDetails] = useState<
-    Array<{ date: string; value: number; score: number }>
-  >([]);
-
-  // Expanded weekly daily breakdown state
-  type MetricName =
-    | "hrv"
-    | "rhr"
-    | "calories"
-    | "readiness"
-    | "sleep_score"
-    | "stress"
-    | "resilience";
   interface DailyMetricDetail {
     value: number;
+    score: number;
+    source: string;
+  }
+  interface ResilienceDetail {
+    value: string;
     score: number;
     source: string;
   }
@@ -197,7 +212,7 @@ export default function RecoveryPage() {
     readiness?: DailyMetricDetail;
     sleepScore?: DailyMetricDetail;
     stress?: DailyMetricDetail;
-    resilience?: DailyMetricDetail;
+    resilience?: ResilienceDetail;
   }
 
   const [expandedWeekIndex, setExpandedWeekIndex] = useState<number | null>(
@@ -271,7 +286,7 @@ export default function RecoveryPage() {
           const record = dailyMap.get(date);
           if (!record) continue;
           console.log(`Processing sleep record for ${date}:`, record);
-          console.log(`Sleep record score field:`, (record as any).score);
+          console.log(`Sleep record score field:`, record.readiness?.score);
 
           // HRV
           if (record.average_hrv && record.average_hrv > 0) {
@@ -318,7 +333,7 @@ export default function RecoveryPage() {
         const dailySleepRecords = data.data || [];
         console.log("Daily sleep records:", dailySleepRecords);
 
-        dailySleepRecords.forEach((record: any) => {
+        dailySleepRecords.forEach((record: OuraDailySleepRecord) => {
           const date = record.day;
           if (
             record.score &&
@@ -350,8 +365,8 @@ export default function RecoveryPage() {
       });
       if (activityRes.ok) {
         const data = await activityRes.json();
-        const dailyMap = new Map<string, any>();
-        (data.data || []).forEach((rec: any) => {
+        const dailyMap = new Map<string, OuraDailyActivityRecord>();
+        (data.data || []).forEach((rec: OuraDailyActivityRecord) => {
           const day =
             rec.day ||
             rec.date ||
@@ -393,7 +408,7 @@ export default function RecoveryPage() {
         const data = await stressRes.json();
         console.log("Stress data response:", data);
         console.log("Sample stress record:", data.data?.[0]);
-        (data.data || []).forEach((rec: any) => {
+        (data.data || []).forEach((rec: OuraStressRecord) => {
           const date = rec.day;
           console.log(`Stress record for ${date}:`, rec);
           if (rec.stress_high && typeof rec.stress_high === "number") {
@@ -425,7 +440,7 @@ export default function RecoveryPage() {
       if (resilienceRes.ok) {
         const data = await resilienceRes.json();
         console.log("Resilience data response:", data);
-        (data.data || []).forEach((rec: any) => {
+        (data.data || []).forEach((rec: OuraResilienceRecord) => {
           const date = rec.day;
           if (rec.level) {
             const levelRiskMap: { [key: string]: number } = {
@@ -460,8 +475,8 @@ export default function RecoveryPage() {
       if (readinessRes.ok) {
         const data = await readinessRes.json();
         console.log("Readiness data response:", data);
-        const dailyMap = new Map<string, any>();
-        (data.data || []).forEach((rec: any) => {
+        const dailyMap = new Map<string, OuraReadinessRecord>();
+        (data.data || []).forEach((rec: OuraReadinessRecord) => {
           const day =
             rec.day ||
             rec.date ||
@@ -690,131 +705,6 @@ export default function RecoveryPage() {
     if (score <= 0.3) return "text-green-400";
     if (score <= 0.6) return "text-yellow-400";
     return "text-red-400";
-  };
-
-  // Function to show daily details for a specific metric
-  const showDailyDetails = async (weekIndex: number, metric: string) => {
-    setSelectedWeekIndex(weekIndex);
-    setSelectedMetric(metric);
-
-    const week = burnoutScores[weekIndex];
-    const weekStart = new Date(week.week_start);
-    const weekEnd = new Date(week.week_end);
-
-    try {
-      const dailyData: Array<{ date: string; value: number; score: number }> =
-        [];
-
-      if (metric === "acwr") {
-        // Fetch Strava activities for ACWR calculation
-        // Strava no longer required; ACWR details disabled
-
-        const startTimestamp = Math.floor(weekStart.getTime() / 1000);
-        const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
-
-        // ACWR based on Strava is disabled; return empty daily data
-        const response = { ok: false } as any;
-
-        // no-op
-      } else if (["hrv", "rhr", "sleep"].includes(metric)) {
-        // Fetch Oura sleep data for HRV, RHR, and sleep metrics
-        const ouraToken = process.env.OURA_API_TOKEN;
-        if (!ouraToken) {
-          alert("Oura API token not configured");
-          return;
-        }
-
-        const response = await fetch("/api/sleep/sleep_detail_days", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            start_date: week.week_start,
-            end_date: week.week_end,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const sleepRecords: SleepDataItem[] = data.data || [];
-
-          // Create a map of daily data
-          const dailyMap = new Map<string, SleepDataItem>();
-          sleepRecords.forEach((record: SleepDataItem) => {
-            dailyMap.set(record.day, record);
-          });
-
-          // Generate daily data for the week
-          for (
-            let d = new Date(weekStart);
-            d <= weekEnd;
-            d.setDate(d.getDate() + 1)
-          ) {
-            const date = d.toISOString().split("T")[0];
-            const record = dailyMap.get(date);
-
-            // Only include days that actually have measurements
-            if (record) {
-              let value = 0;
-              let score = 0;
-
-              if (metric === "hrv") {
-                value = record.average_hrv || 0;
-                // Calculate HRV drop score (simplified)
-                score = value > 0 ? Math.max(0, (100 - value) / 100) : 0;
-              } else if (metric === "rhr") {
-                value = record.average_heart_rate || 0;
-                // Calculate RHR elevation score (simplified)
-                score = value > 0 ? Math.min(1, (value - 50) / 20) : 0;
-              } else if (metric === "sleep") {
-                value = (record.total_sleep_duration || 0) / 3600; // Convert to hours
-                // Calculate sleep debt score
-                const targetSleep = 8;
-                score =
-                  value > 0
-                    ? Math.max(0, (targetSleep - value) / targetSleep)
-                    : 1;
-              }
-
-              dailyData.push({ date, value, score });
-            }
-          }
-        }
-      } else if (metric === "streak") {
-        // Calculate training streak for each day
-        // Strava no longer required; training streak disabled
-
-        const startTimestamp = Math.floor(weekStart.getTime() / 1000);
-        const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
-
-        const response = { ok: false } as any;
-
-        // no-op
-      } else if (metric === "calories") {
-        // Calculate total calories for each day
-        // Strava no longer required; calories shown via Oura in expanded view already
-
-        const startTimestamp = Math.floor(weekStart.getTime() / 1000);
-        const endTimestamp = Math.floor(weekEnd.getTime() / 1000);
-
-        const response = { ok: false } as any;
-
-        // no-op
-      }
-
-      setDailyDetails(dailyData);
-    } catch (error) {
-      console.error("Error fetching daily details:", error);
-      alert(
-        "Error fetching daily details. Please check your API tokens and try again."
-      );
-    }
-  };
-
-  // Function to close daily details
-  const closeDailyDetails = () => {
-    setSelectedWeekIndex(null);
-    setSelectedMetric(null);
-    setDailyDetails([]);
   };
 
   return (
@@ -1785,52 +1675,6 @@ export default function RecoveryPage() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* Daily Details Modal */}
-              {selectedWeekIndex !== null && selectedMetric && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-[#1e2a28] p-6 rounded-lg border border-[#3b5450] max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-lg text-orange-400">
-                        Daily Details: {selectedMetric.toUpperCase()} - Week{" "}
-                        {selectedWeekIndex + 1}
-                      </h3>
-                      <button
-                        onClick={closeDailyDetails}
-                        className="text-gray-400 hover:text-white text-xl"
-                      >
-                        ×
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {dailyDetails.map((day, dayIndex) => (
-                        <div
-                          key={dayIndex}
-                          className="flex justify-between items-center p-2 bg-[#283937] rounded"
-                        >
-                          <span className="text-white">{day.date}</span>
-                          <div className="flex gap-4">
-                            <span className="text-gray-400">
-                              Value: {day.value.toFixed(2)}
-                            </span>
-                            <span className="text-gray-400">
-                              Score: {day.score.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 text-center">
-                      <p className="text-xs text-gray-400">
-                        Note: This shows sample data. In a real implementation,
-                        you would fetch actual daily metrics for this week.
-                      </p>
-                    </div>
-                  </div>
                 </div>
               )}
 

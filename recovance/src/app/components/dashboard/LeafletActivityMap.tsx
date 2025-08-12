@@ -42,19 +42,19 @@ interface StravaActivity {
   negative_elevation_gain?: number;
   calories?: number;
   description?: string;
-  photos?: any;
-  gear?: any;
+  photos?: unknown;
+  gear?: unknown;
   device_name?: string;
   embed_token?: string;
-  splits_metric?: any[];
-  splits_standard?: any[];
-  laps?: any[];
-  best_efforts?: any[];
+  splits_metric?: unknown[];
+  splits_standard?: unknown[];
+  laps?: unknown[];
+  best_efforts?: unknown[];
   kudos_count: number;
   comment_count: number;
   athlete_count: number;
   photo_count: number;
-  map?: any;
+  map?: unknown;
   has_kudoed: boolean;
   hide_from_home: boolean;
   workout_type?: number;
@@ -67,7 +67,10 @@ interface LeafletActivityMapProps {
 }
 
 // Fix for default Leaflet markers
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+interface LeafletIconDefault extends L.Icon.Default {
+  _getIconUrl?: () => string;
+}
+delete (L.Icon.Default.prototype as LeafletIconDefault)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",

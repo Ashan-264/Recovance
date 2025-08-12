@@ -2,15 +2,8 @@
 
 // pages/insights.tsx
 import Head from "next/head";
-import { useState, useEffect } from "react";
-import {
-  InsightsHeader,
-  PageIntro,
-  SportTabs,
-  SportInsightCard,
-  AnalysisRow,
-  DeviceTabsAndCards,
-} from "@/app/components/insights";
+import { useState } from "react";
+import { InsightsHeader, PageIntro } from "@/app/components/insights";
 import OuraInsights from "@/app/components/insights/OuraInsights";
 import StravaInsights from "@/app/components/insights/StravaInsights";
 
@@ -30,42 +23,6 @@ export default function InsightsPage() {
   const getStravaToken = () => {
     return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
   };
-
-  // Example inline SVG for "Cycling Power Output" card
-  const cyclingPowerSvg = (
-    <svg
-      width="100%"
-      height="148"
-      viewBox="-3 0 478 150"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      preserveAspectRatio="none"
-    >
-      <path
-        d="M0 109C18.1538 109 18.1538 21 … V109Z"
-        fill="url(#paint0_linear_1131_5935)"
-      />
-      <path
-        d="M0 109C18.1538 109 18.1538 21 … 472 25"
-        stroke="#9db9b5"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <defs>
-        <linearGradient
-          id="paint0_linear_1131_5935"
-          x1="236"
-          y1="1"
-          x2="236"
-          y2="149"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#283936" />
-          <stop offset="1" stopColor="#283936" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
 
   return (
     <>
