@@ -4,6 +4,8 @@
 import Head from "next/head";
 import { useState } from "react";
 import Header from "@/app/components/Header";
+import { useStrava } from "@/app/contexts/StravaContext";
+import StravaConfig from "@/app/components/StravaConfig";
 import TabNavigation from "@/app/components/training/TabNavigation";
 import Calendar from "@/app/components/training/Calendar";
 import StravaStats from "@/app/components/training/StravaStats";
@@ -68,14 +70,9 @@ interface StravaActivity {
 }
 
 export default function TrainingPage() {
-  const [stravaToken, setStravaToken] = useState("");
+  const { getStravaToken, hasValidToken } = useStrava();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // Get Strava token from input or environment variable
-  const getStravaToken = () => {
-    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
-  };
 
   const fetchActivities = async () => {
     const token = getStravaToken();
@@ -159,38 +156,38 @@ export default function TrainingPage() {
                 <TabNavigation />
               </div>
 
-              {/* 3. Strava Token Input */}
+              {/* 3. Strava Configuration */}
+              <div className="mx-4">
+                <StravaConfig />
+              </div>
+
+              {/* 4. Load Activities */}
               <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-4">
-                <div className="flex gap-4 items-end">
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold mb-2 text-white">
-                      Strava Access Token:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Enter your Strava access token (or use STRAVA_API_TOKEN env var)"
-                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                      value={stravaToken}
-                      onChange={(e) => setStravaToken(e.target.value)}
-                    />
-                    {!stravaToken &&
-                      process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
-                        <p className="text-xs text-green-400 mt-1">
-                          Using environment variable STRAVA_API_TOKEN
-                        </p>
-                      )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-2">
+                      Training Data
+                    </h3>
+                    <p className="text-sm text-gray-400">
+                      Load your Strava activities to analyze training patterns
+                    </p>
                   </div>
                   <button
                     onClick={fetchActivities}
-                    disabled={loading || !getStravaToken()}
+                    disabled={loading || !hasValidToken}
                     className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                   >
                     {loading ? "Loading..." : "Load Activities"}
                   </button>
                 </div>
+                {!hasValidToken && (
+                  <p className="text-sm text-red-400 mt-2">
+                    ⚠️ Configure Strava token above to load activities
+                  </p>
+                )}
               </div>
 
-              {/* 4. Calendar with Activity Counts */}
+              {/* 5. Calendar with Activity Counts */}
               <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
                 Activity Calendar
               </h2>
@@ -198,7 +195,7 @@ export default function TrainingPage() {
                 <Calendar activities={activities} />
               </div>
 
-              {/* 5. Strava Statistics */}
+              {/* 6. Strava Statistics */}
               <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
                 Activity Statistics
               </h2>

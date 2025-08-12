@@ -181,6 +181,10 @@ export default function TrendVisualizer() {
           if (stravaResponse.ok) {
             const stravaData = await stravaResponse.json();
             stravaActivities = stravaData.activities || [];
+            console.log(`Fetched ${stravaActivities.length} Strava activities`);
+            if (stravaActivities.length > 0) {
+              console.log("Sample activity:", stravaActivities[0]);
+            }
           }
         } catch (error) {
           console.warn("Failed to fetch Strava data:", error);
@@ -223,14 +227,34 @@ export default function TrendVisualizer() {
       const processedData: TrendData[] = dates.map((date) => {
         // Calculate activity minutes for this date
         const dayActivities = stravaActivities.filter(
-          (activity: StravaActivity) =>
-            activity.start_date_local?.startsWith(date)
+          (activity: StravaActivity) => {
+            if (!activity.start_date_local) return false;
+            // Extract just the date part from the ISO datetime string
+            const activityDate = activity.start_date_local.split("T")[0];
+            return activityDate === date;
+          }
         );
         const activityMinutes = dayActivities.reduce(
           (sum: number, activity: StravaActivity) =>
             sum + (activity.moving_time || 0) / 60,
           0
         );
+
+        // Debug logging for activity data
+        if (dayActivities.length > 0) {
+          console.log(
+            `${date}: Found ${
+              dayActivities.length
+            } activities, ${activityMinutes.toFixed(1)} minutes total`
+          );
+          dayActivities.forEach((activity) => {
+            console.log(
+              `  - ${activity.name}: ${(
+                (activity.moving_time || 0) / 60
+              ).toFixed(1)} min (${activity.type})`
+            );
+          });
+        }
 
         // Get readiness score for this date
         const readinessEntry = ouraReadiness.find(
