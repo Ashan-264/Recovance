@@ -4,6 +4,8 @@
 import Head from "next/head";
 import { useState } from "react";
 import DashboardHeader from "@/app/components/Header";
+import { useStrava } from "@/app/contexts/StravaContext";
+import StravaConfig from "@/app/components/StravaConfig";
 import {
   WelcomeBanner,
   TrendVisualizer,
@@ -94,15 +96,10 @@ interface StravaActivity {
 }
 
 export default function DashboardPage() {
-  const [stravaToken, setStravaToken] = useState("");
+  const { getStravaToken, hasValidToken } = useStrava();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [mapMode, setMapMode] = useState<"interactive" | "flat">("interactive");
-
-  // Get Strava token from input or environment variable
-  const getStravaToken = () => {
-    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
-  };
 
   const fetchActivities = async () => {
     const token = getStravaToken();
@@ -169,44 +166,38 @@ export default function DashboardPage() {
               {/* 2a. Welcome Banner */}
               <WelcomeBanner />
 
-              {/* 2b. API Tokens Input */}
+              {/* 2b. Strava Configuration */}
+              <div className="mx-4">
+                <StravaConfig />
+              </div>
+
+              {/* 2c. Load Activities */}
               <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-6">
-                <h3 className="text-lg font-bold text-white mb-4">
-                  API Configuration
-                </h3>
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-white">
-                    Strava Access Token:
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Enter your Strava access token (or use STRAVA_API_TOKEN env var)"
-                    className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                    value={stravaToken}
-                    onChange={(e) => setStravaToken(e.target.value)}
-                  />
-                  {!stravaToken && process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
-                    <p className="text-xs text-green-400 mt-1">
-                      Using environment variable STRAVA_API_TOKEN
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-2">
+                      Activity Data
+                    </h3>
+                    <p className="text-sm text-gray-400">
+                      Load your Strava activities to display on the map
                     </p>
-                  )}
-                </div>
-                <div className="mt-4">
+                  </div>
                   <button
                     onClick={fetchActivities}
-                    disabled={loading || !getStravaToken()}
+                    disabled={loading || !hasValidToken}
                     className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                   >
                     {loading ? "Loading..." : "Load Activities"}
                   </button>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Note: API tokens can be configured via environment variables
-                    (STRAVA_API_TOKEN, MAP_BOX_API)
-                  </p>
                 </div>
+                {!hasValidToken && (
+                  <p className="text-sm text-red-400 mt-2">
+                    ⚠️ Configure Strava token above to load activities
+                  </p>
+                )}
               </div>
 
-              {/* 2c. Activity Map */}
+              {/* 2d. Activity Map */}
               <div className="mx-4 mb-6 space-y-4">
                 <div className="flex gap-2">
                   <button

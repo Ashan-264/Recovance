@@ -4,10 +4,13 @@
 import Head from "next/head";
 import { useState } from "react";
 import { InsightsHeader, PageIntro } from "@/app/components/insights";
+import { useStrava } from "@/app/contexts/StravaContext";
+import StravaConfig from "@/app/components/StravaConfig";
 import OuraInsights from "@/app/components/insights/OuraInsights";
 import StravaInsights from "@/app/components/insights/StravaInsights";
 
 export default function InsightsPage() {
+  const { getStravaToken, hasValidToken } = useStrava();
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30); // 30 days ago
@@ -16,13 +19,7 @@ export default function InsightsPage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
   });
-  const [stravaToken, setStravaToken] = useState("");
   const [showInsights, setShowInsights] = useState(false);
-
-  // Get Strava token from input or environment variable
-  const getStravaToken = () => {
-    return stravaToken || process.env.NEXT_PUBLIC_STRAVA_API_TOKEN || "";
-  };
 
   return (
     <>
@@ -44,9 +41,17 @@ export default function InsightsPage() {
               {/* 2. Page Intro (Title + subtitle) */}
               <PageIntro />
 
-              {/* 3. Date Range and Token Controls */}
+              {/* 3. Strava Configuration */}
+              <div className="mx-4">
+                <StravaConfig />
+              </div>
+
+              {/* 4. Date Range Controls */}
               <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <h3 className="text-lg font-bold text-white mb-4">
+                  Date Range
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold mb-2 text-white">
                       Start Date:
@@ -69,24 +74,6 @@ export default function InsightsPage() {
                       onChange={(e) => setEndDate(e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-2 text-white">
-                      Strava Token:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Enter Strava access token (or use STRAVA_API_TOKEN env var)"
-                      className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                      value={stravaToken}
-                      onChange={(e) => setStravaToken(e.target.value)}
-                    />
-                    {!stravaToken &&
-                      process.env.NEXT_PUBLIC_STRAVA_API_TOKEN && (
-                        <p className="text-xs text-green-400 mt-1">
-                          Using environment variable STRAVA_API_TOKEN
-                        </p>
-                      )}
-                  </div>
                 </div>
               </div>
 
@@ -94,10 +81,16 @@ export default function InsightsPage() {
               <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450] mx-4 mb-6">
                 <button
                   onClick={() => setShowInsights(!showInsights)}
-                  className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition"
+                  disabled={!hasValidToken}
+                  className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                 >
                   {showInsights ? "Hide Insights" : "Load Insights"}
                 </button>
+                {!hasValidToken && (
+                  <p className="text-sm text-red-400 mt-2">
+                    ⚠️ Configure Strava token above to load insights
+                  </p>
+                )}
               </div>
 
               {showInsights && (

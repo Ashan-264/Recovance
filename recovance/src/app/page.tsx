@@ -9,6 +9,7 @@ import {
   AISuggestions,
   ActionButtons,
 } from "@/app/components";
+import StravaConfig from "@/app/components/StravaConfig";
 
 const Home: NextPage = () => {
   const todayDate = new Date().toLocaleDateString("en-US", {
@@ -50,6 +51,10 @@ const Home: NextPage = () => {
             date={todayDate}
             recoveryPercentage={87}
           />
+
+          <div className="px-6">
+            <StravaConfig />
+          </div>
 
           <TrendVisualizer />
 
