@@ -3,6 +3,7 @@
 import Head from "next/head";
 import Header from "@/app/components/Header";
 import { RecoveryHeader } from "@/app/components/recovery";
+import SleepDataUpload from "@/app/components/SleepDataUpload";
 import { useState } from "react";
 
 // Define types for better type safety
@@ -723,6 +724,11 @@ export default function RecoveryPage() {
           <div className="flex flex-1 flex-col max-w-[960px]">
             {/* 1. Recovery Header */}
             <RecoveryHeader />
+
+            {/* 1.5. Sleep Data Upload */}
+            <div className="px-4">
+              <SleepDataUpload />
+            </div>
 
             {/* 2. Sleep Data Range Picker */}
             <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">

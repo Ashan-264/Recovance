@@ -6,6 +6,7 @@ import { useState } from "react";
 import Header from "@/app/components/Header";
 import { useStrava } from "@/app/contexts/StravaContext";
 import StravaConfig from "@/app/components/StravaConfig";
+import ActivityDataUpload from "@/app/components/ActivityDataUpload";
 import TabNavigation from "@/app/components/training/TabNavigation";
 import Calendar from "@/app/components/training/Calendar";
 import StravaStats from "@/app/components/training/StravaStats";
@@ -159,6 +160,11 @@ export default function TrainingPage() {
               {/* 3. Strava Configuration */}
               <div className="mx-4">
                 <StravaConfig />
+              </div>
+
+              {/* 3.5. Activity Data Upload */}
+              <div className="mx-4">
+                <ActivityDataUpload />
               </div>
 
               {/* 4. Load Activities */}
