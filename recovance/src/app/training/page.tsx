@@ -2,16 +2,17 @@
 
 // pages/training.tsx
 import Head from "next/head";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "@/app/components/Header";
 import { useStrava } from "@/app/contexts/StravaContext";
+import {
+  describeStravaError,
+  loadCachedActivities,
+  postStrava,
+} from "@/lib/stravaClient";
 import StravaConfig from "@/app/components/StravaConfig";
-import ActivityDataUpload from "@/app/components/ActivityDataUpload";
-import TabNavigation from "@/app/components/training/TabNavigation";
 import Calendar from "@/app/components/training/Calendar";
 import StravaStats from "@/app/components/training/StravaStats";
-import AIRecommendations from "@/app/components/AISuggestions";
-import ActionButtons from "@/app/components/ActionButtons";
 
 interface StravaActivity {
   id: number;
@@ -71,45 +72,55 @@ interface StravaActivity {
 }
 
 export default function TrainingPage() {
-  const { getStravaToken, hasValidToken } = useStrava();
+  const { hasValidToken } = useStrava();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
+
+  const dateRange = () => {
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    return {
+      startDate: twoYearsAgo.toISOString().split("T")[0],
+      endDate: new Date().toISOString().split("T")[0],
+    };
+  };
+
+  // Render stored activities immediately on page load.
+  useEffect(() => {
+    let cancelled = false;
+    const { startDate, endDate } = dateRange();
+
+    loadCachedActivities<StravaActivity>(startDate, endDate).then((cached) => {
+      if (!cancelled && cached.length > 0) {
+        setActivities(cached);
+        setLoadedFromCache(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchActivities = async () => {
-    const token = getStravaToken();
-    if (!token) {
-      console.error("No Strava token available");
-      return;
-    }
-
     setLoading(true);
+    setError(null);
     try {
       // Fetch activities for the last 2 years to get comprehensive data
-      const twoYearsAgo = new Date();
-      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-      const startDate = twoYearsAgo.toISOString().split("T")[0];
-      const endDate = new Date().toISOString().split("T")[0];
+      const { startDate, endDate } = dateRange();
 
-      const response = await fetch("/api/strava/activities", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          access_token: token,
-          start_date: startDate,
-          end_date: endDate,
-        }),
-      });
+      const data = await postStrava<{ activities?: StravaActivity[] }>(
+        "/api/strava/activities",
+        { start_date: startDate, end_date: endDate }
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        setActivities(data.activities || []);
-      } else {
-        console.error("Failed to fetch activities");
-      }
-    } catch (error) {
-      console.error("Error fetching activities:", error);
+      setActivities(data.activities || []);
+      setLoadedFromCache(false);
+    } catch (err) {
+      console.error("Error fetching activities:", err);
+      setError(describeStravaError(err));
     } finally {
       setLoading(false);
     }
@@ -126,7 +137,7 @@ export default function TrainingPage() {
   return (
     <>
       <Head>
-        <title>Stitch Design · Training Analytics</title>
+        <title>Recovance · Training</title>
       </Head>
 
       <div
@@ -152,19 +163,9 @@ export default function TrainingPage() {
                 </div>
               </div>
 
-              {/* 2. Tabs */}
-              <div className="pb-3">
-                <TabNavigation />
-              </div>
-
               {/* 3. Strava Configuration */}
               <div className="mx-4">
                 <StravaConfig />
-              </div>
-
-              {/* 3.5. Activity Data Upload */}
-              <div className="mx-4">
-                <ActivityDataUpload />
               </div>
 
               {/* 4. Load Activities */}
@@ -175,21 +176,34 @@ export default function TrainingPage() {
                       Training Data
                     </h3>
                     <p className="text-sm text-gray-400">
-                      Load your Strava activities to analyze training patterns
+                      {activities.length > 0
+                        ? `${activities.length.toLocaleString()} activities loaded${
+                            loadedFromCache ? " from your database" : ""
+                          }`
+                        : "No activities stored yet — sync to pull them from Strava"}
                     </p>
                   </div>
                   <button
                     onClick={fetchActivities}
-                    disabled={loading || !hasValidToken}
+                    disabled={loading}
                     className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                   >
-                    {loading ? "Loading..." : "Load Activities"}
+                    {loading
+                      ? "Syncing..."
+                      : activities.length > 0
+                      ? "Sync new activities"
+                      : "Load Activities"}
                   </button>
                 </div>
-                {!hasValidToken && (
+                {!hasValidToken && activities.length === 0 && (
                   <p className="text-sm text-red-400 mt-2">
-                    ⚠️ Configure Strava token above to load activities
+                    ⚠️ Connect Strava to load activities
                   </p>
+                )}
+                {error && (
+                  <div className="mt-3 rounded-lg border border-red-600/40 bg-red-900/20 p-3">
+                    <p className="text-sm text-red-400">{error}</p>
+                  </div>
                 )}
               </div>
 
@@ -207,21 +221,6 @@ export default function TrainingPage() {
               </h2>
               <div className="p-4">
                 <StravaStats activities={activities} />
-              </div>
-
-              {/* 6. AI Recommendations */}
-              <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
-                AI Recommendations
-              </h2>
-              <div className="p-4">
-                <AIRecommendations />
-              </div>
-
-              {/* 7. Bottom Action Buttons */}
-              <div className="flex justify-stretch">
-                <div className="flex flex-1 flex-wrap justify-end gap-3 px-4 py-3">
-                  <ActionButtons />
-                </div>
               </div>
             </div>
           </div>

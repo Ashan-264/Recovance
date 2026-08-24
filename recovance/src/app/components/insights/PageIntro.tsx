@@ -6,7 +6,7 @@ export default function PageIntro() {
         <p className="text-white tracking-light text-[32px] font-bold leading-tight">
           Insights
         </p>
-        <p className="text-[#9db9b5] text-sm font-normal leading-normal">
+        <p className="text-[#9cbab5] text-sm font-normal leading-normal">
           Personalized analysis and actionable insights to optimize your
           performance and recovery.
         </p>

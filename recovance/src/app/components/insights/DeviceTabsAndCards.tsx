@@ -7,6 +7,54 @@ import AnalysisRow from "./AnalysisRow";
 // You can create smaller sub‐components if desired, but here’s an example:
 const devices = ["Oura Ring", "Strava", "Garmin", "Coros"];
 
+// Smooth sparkline through the given y-values across the 478-wide viewBox,
+// with a gradient fill underneath. Gradient ids must be unique per instance.
+function SparklineChart({ id, points }: { id: string; points: number[] }) {
+  const step = 472 / (points.length - 1);
+  const line = points
+    .map((y, i) => {
+      const x = i * step;
+      if (i === 0) return `M${x} ${y}`;
+      const prevX = (i - 1) * step;
+      const midX = (prevX + x) / 2;
+      return `C${midX} ${points[i - 1]} ${midX} ${y} ${x} ${y}`;
+    })
+    .join(" ");
+  const fill = `${line} V149 H0 Z`;
+
+  return (
+    <svg
+      width="100%"
+      height="148"
+      viewBox="-3 0 478 150"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      preserveAspectRatio="none"
+    >
+      <path d={fill} fill={`url(#${id})`} />
+      <path
+        d={line}
+        stroke="#9cbab5"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <defs>
+        <linearGradient
+          id={id}
+          x1="236"
+          y1="1"
+          x2="236"
+          y2="149"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#283936" />
+          <stop offset="1" stopColor="#283936" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
 const deviceCardsData = [
   {
     title: "Sleep Duration and Quality",
@@ -15,39 +63,10 @@ const deviceCardsData = [
     trendValue: "5%",
     trendPositive: true,
     chartSvg: (
-      <svg
-        width="100%"
-        height="148"
-        viewBox="-3 0 478 150"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="none"
-      >
-        {/* … your same path/gradient definitions, with stroke="#9db9b5" … */}
-        <path
-          d="M0 109C18.1538 109 … V109Z"
-          fill="url(#paint0_linear_1131_5935)"
-        />
-        <path
-          d="M0 109C18.1538 109 … 472 25"
-          stroke="#9db9b5"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <defs>
-          <linearGradient
-            id="paint0_linear_1131_5935"
-            x1="236"
-            y1="1"
-            x2="236"
-            y2="149"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop stopColor="#283936" />
-            <stop offset="1" stopColor="#283936" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
+      <SparklineChart
+        id="device_chart_sleep"
+        points={[109, 21, 41, 93, 33, 101, 61, 45, 121, 149, 1, 81, 129, 25]}
+      />
     ),
     xLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   },
@@ -58,39 +77,10 @@ const deviceCardsData = [
     trendValue: "10%",
     trendPositive: true,
     chartSvg: (
-      <svg
-        width="100%"
-        height="148"
-        viewBox="-3 0 478 150"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="none"
-      >
-        {/* … same SVG but you could change stroke color to #9db9b5 … */}
-        <path
-          d="M0 109C18.1538 109 … V109Z"
-          fill="url(#paint0_linear_1131_5935)"
-        />
-        <path
-          d="M0 109C18.1538 109 … 472 25"
-          stroke="#9db9b5"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <defs>
-          <linearGradient
-            id="paint0_linear_1131_5935"
-            x1="236"
-            y1="1"
-            x2="236"
-            y2="149"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop stopColor="#283936" />
-            <stop offset="1" stopColor="#283936" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
+      <SparklineChart
+        id="device_chart_hrv"
+        points={[89, 61, 101, 45, 121, 33, 93, 21, 109, 41, 129, 25, 81, 49]}
+      />
     ),
     xLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   },
@@ -101,43 +91,13 @@ const deviceCardsData = [
     trendValue: "N/A",
     trendPositive: true,
     chartSvg: (
-      <svg
-        width="100%"
-        height="148"
-        viewBox="-3 0 478 150"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="none"
-      >
-        {/* …same pattern… */}
-        <path
-          d="M0 109C18.1538 109 … V109Z"
-          fill="url(#paint0_linear_1131_5935)"
-        />
-        <path
-          d="M0 109C18.1538 109 … 472 25"
-          stroke="#9db9b5"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <defs>
-          <linearGradient
-            id="paint0_linear_1131_5935"
-            x1="236"
-            y1="1"
-            x2="236"
-            y2="149"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop stopColor="#283936" />
-            <stop offset="1" stopColor="#283936" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
+      <SparklineChart
+        id="device_chart_temp"
+        points={[75, 81, 69, 85, 73, 77, 65, 79, 71, 83, 67, 75, 69, 73]}
+      />
     ),
     xLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   },
-  // …and so on for the other device cards (Training Load, VO2 Max, etc.)…
 ];
 
 export default function DeviceTabsAndCards() {
@@ -154,7 +114,7 @@ export default function DeviceTabsAndCards() {
                 `flex flex-col items-center justify-center pb-[13px] pt-4 text-sm font-bold leading-normal tracking-[0.015em] ` +
                 (idx === 0
                   ? "border-b-[3px] border-b-white text-white"
-                  : "border-b-[3px] border-b-transparent text-[#9db9b5]")
+                  : "border-b-[3px] border-b-transparent text-[#9cbab5]")
               }
             >
               {dev}
@@ -220,7 +180,7 @@ export default function DeviceTabsAndCards() {
               fill="currentColor"
               viewBox="0 0 256 256"
             >
-              <path d="M232,208a8,8,0,0,1-8,8H32 … 48Z" />
+              <path d="M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V48a8,8,0,0,1,16,0V156.69l50.34-50.35a8,8,0,0,1,11.32,0L128,132.69,180.69,80H160a8,8,0,0,1,0-16h40a8,8,0,0,1,8,8v40a8,8,0,0,1-16,0V91.31l-58.34,58.35a8,8,0,0,1-11.32,0L96,123.31,40,179.31V200H224A8,8,0,0,1,232,208Z" />
             </svg>
           }
           heading={item.heading}

@@ -10,6 +10,10 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // Prisma's generated client is machine-written; linting it is noise.
+  {
+    ignores: ["src/generated/**"],
+  },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 

@@ -1,91 +1,62 @@
-// components/Insights/InsightsHeader.tsx
-import Link from "next/link";
+"use client";
 
-export default function InsightsHeader() {
+// components/Header.tsx
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const LINKS = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/training", label: "Training" },
+  { href: "/recovery", label: "Recovery" },
+  { href: "/insights", label: "Insights" },
+  { href: "/connect", label: "Connect" },
+  { href: "/coming-soon", label: "Coming up" },
+];
+
+export default function Header() {
+  const pathname = usePathname();
+
   return (
-    <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#283936] px-10 py-3">
+    <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#283936] px-6 py-3 md:px-10">
       {/* Left: Logo + Title */}
-      <div className="flex items-center gap-4 text-white">
+      <Link href="/" className="flex items-center gap-3 text-white">
         <div className="size-4">
-          <svg
-            viewBox="0 0 48 48"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            {/* … the same two <path> elements from your HTML … */}
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
-              d="M39.5563 34.1455V13.8546C39.5563 … 34.1455Z"
-              fill="currentColor"
-            />
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M10.4485 13.8519C10.4749 … 13.8519Z"
-              fill="currentColor"
+              d="M2 24H12L18 8L28 40L34 22L38 30H46"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         </div>
         <h2 className="text-white text-lg font-bold leading-tight tracking-[-0.015em]">
           Recovance
         </h2>
-      </div>
+      </Link>
 
-      {/* Right: Navigation Links + Bell + Avatar */}
-      <div className="flex flex-1 justify-end gap-8">
-        <nav className="flex items-center gap-9">
-          <Link
-            href="/dashboard"
-            className="text-white text-sm font-medium leading-normal"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/training"
-            className="text-white text-sm font-medium leading-normal"
-          >
-            Training
-          </Link>
-          <Link
-            href="/recovery"
-            className="text-white text-sm font-medium leading-normal"
-          >
-            Recovery
-          </Link>
-          <Link
-            href="/insights"
-            className="text-white text-sm font-medium leading-normal"
-          >
-            Insights
-          </Link>
-          <Link
-            href="/community"
-            className="text-white text-sm font-medium leading-normal"
-          >
-            Community
-          </Link>
-        </nav>
-
-        {/* Notification Bell */}
-        <button className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 bg-[#283936] text-white gap-2 text-sm font-bold leading-normal tracking-[0.015em] min-w-0 px-2.5">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20px"
-            height="20px"
-            fill="currentColor"
-            viewBox="0 0 256 256"
-          >
-            <path d="M221.8,175.94C216.25 … 48Z" />
-          </svg>
-        </button>
-
-        {/* Avatar */}
-        <div
-          className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10"
-          style={{
-            backgroundImage: `url("https://lh3.googleusercontent.com/aida-public/…")`,
-          }}
-        />
-      </div>
+      {/* Right: navigation with the current tab highlighted */}
+      <nav className="flex items-center gap-1 overflow-x-auto">
+        {LINKS.map((link) => {
+          const active =
+            pathname === link.href || pathname?.startsWith(`${link.href}/`);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={active ? "page" : undefined}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium leading-normal transition ${
+                active
+                  ? "bg-[#0cf2d0]/15 font-bold text-[#0cf2d0]"
+                  : "text-[#9cbab5] hover:text-white"
+              }`}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </nav>
     </header>
   );
 }

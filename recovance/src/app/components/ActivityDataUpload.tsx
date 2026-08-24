@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 interface UploadResult {
   success: boolean;
@@ -11,7 +11,41 @@ interface UploadResult {
 export default function ActivityDataUpload() {
   const [activitiesFile, setActivitiesFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [savedExport, setSavedExport] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
+
+  // Offer the export that ships with the project as the default source,
+  // so the usual case is one click instead of finding the file again.
+  useEffect(() => {
+    fetch("/api/garmin/import-default")
+      .then((response) => response.json())
+      .then((data) => setSavedExport(data.files?.activities ?? null))
+      .catch(() => setSavedExport(null));
+  }, []);
+
+  const handleImportSaved = async () => {
+    setImporting(true);
+    setResult(null);
+    try {
+      const response = await fetch("/api/garmin/import-default", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset: "activities" }),
+      });
+      const data = await response.json();
+      setResult({
+        success: response.ok,
+        message: data.message || data.error,
+        records: data.records,
+      });
+    } catch (error) {
+      console.error("Error importing the saved export:", error);
+      setResult({ success: false, message: "Import failed" });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const parseCSV = (content: string): string[][] => {
     const lines = content.trim().split("\n");
@@ -84,6 +118,27 @@ export default function ActivityDataUpload() {
       <h3 className="text-lg font-semibold text-white mb-3">
         Upload Garmin Activity Data
       </h3>
+
+      {savedExport && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#3b5450] bg-[#111817] p-3">
+          <div>
+            <p className="text-sm text-[#d6e6e3]">
+              Use your saved export{" "}
+              <span className="font-mono text-xs text-[#9cbab5]">{savedExport}</span>
+            </p>
+            <p className="text-xs text-[#7f9d98]">
+              Already on disk — no file picking needed. Safe to re-run.
+            </p>
+          </div>
+          <button
+            onClick={handleImportSaved}
+            disabled={importing}
+            className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] transition hover:bg-[#0ad4b8] disabled:opacity-50"
+          >
+            {importing ? "Importing..." : "Import"}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import ChartLine from "./ChartLine";
+import { withProviderAuth } from "@/lib/oauthClient";
 
 interface OuraSleepData {
   id: string;
@@ -41,32 +42,27 @@ export default function OuraInsights({
   const [stressData, setStressData] = useState<OuraStressData[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Remove auto-loading - data will be fetched when component mounts only if manually triggered
-  // useEffect(() => {
-  //   fetchOuraData();
-  // }, [startDate, endDate]);
-
-  const fetchOuraData = async () => {
+  const fetchOuraData = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch sleep data with total_sleep_duration from detailed endpoint
       const sleepResponse = await fetch("/api/sleep/sleep_detail_days", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({ start_date: startDate, end_date: endDate }),
       });
 
       // Fetch activity data
       const activityResponse = await fetch("/api/oura/daily_activity", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({ start_date: startDate, end_date: endDate }),
       });
 
       // Fetch stress data
       const stressResponse = await fetch("/api/oura/daily_stress", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({ start_date: startDate, end_date: endDate }),
       });
 
@@ -111,7 +107,13 @@ export default function OuraInsights({
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate]);
+
+  // Load on mount and whenever the range changes. The endpoints read from
+  // Postgres first and only call Oura for dates never fetched before.
+  useEffect(() => {
+    fetchOuraData();
+  }, [fetchOuraData]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

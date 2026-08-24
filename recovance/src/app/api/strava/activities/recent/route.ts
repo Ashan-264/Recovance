@@ -1,47 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getStravaActivities, StravaUnavailableError } from "@/lib/stravaCache";
+import { getCurrentUser } from "@/lib/session";
 
+/**
+ * Recent activities.
+ *
+ * Backed by the same cache as /api/strava/activities rather than proxying
+ * Strava directly, so this endpoint costs nothing when the range is already
+ * stored. `after` (unix seconds) and `per_page` are kept for compatibility.
+ */
 export async function GET(req: NextRequest) {
   try {
-    const access_token = req.headers.get("Authorization")?.split("Bearer ")[1];
-
-    if (!access_token) {
-      return NextResponse.json(
-        { error: "Missing access token" },
-        { status: 401 }
-      );
-    }
-
+    const user = await getCurrentUser(req);
     const { searchParams } = new URL(req.url);
-    const per_page = searchParams.get("per_page") || "100";
-    const page = searchParams.get("page") || "1";
-    const after = searchParams.get("after"); // Unix timestamp for filtering activities after this date
 
-    let url = `https://www.strava.com/api/v3/athlete/activities?per_page=${per_page}&page=${page}`;
-    if (after) {
-      url += `&after=${after}`;
-    }
+    const perPage = Math.min(parseInt(searchParams.get("per_page") || "100", 10) || 100, 500);
+    const after = searchParams.get("after");
+    const cacheOnly = searchParams.get("cache_only") === "1";
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${access_token}`,
-      },
-    });
+    // Default to the last 90 days when no explicit start is given.
+    const start = after
+      ? new Date(parseInt(after, 10) * 1000)
+      : new Date(Date.now() - 90 * 86_400_000);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return NextResponse.json(
-        { error: `Strava API error: ${errorText}` },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error("Error fetching recent activities:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+    const result = await getStravaActivities(
+      user.id,
+      start.toISOString().slice(0, 10),
+      new Date().toISOString().slice(0, 10),
+      { cacheOnly }
     );
+
+    return NextResponse.json(result.activities.slice(0, perPage));
+  } catch (error) {
+    if (error instanceof StravaUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("Error fetching recent activities:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

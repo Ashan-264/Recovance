@@ -24,8 +24,8 @@ export default function RecoveryCard({
         <Image
           src={imageSrc}
           alt={imageAlt}
-          layout="fill"
-          objectFit="cover"
+          fill
+          style={{ objectFit: "cover" }}
           className="rounded-l-lg"
         />
       </div>

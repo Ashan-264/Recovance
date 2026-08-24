@@ -66,11 +66,11 @@ export default function ChartLine({
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: "#9db9b5" },
+        ticks: { color: "#9cbab5" },
       },
       y: {
         grid: { color: "#3b5450" },
-        ticks: { color: "#9db9b5" },
+        ticks: { color: "#9cbab5" },
       },
     },
   } as const;

@@ -3,8 +3,9 @@
 import Head from "next/head";
 import Header from "@/app/components/Header";
 import { RecoveryHeader } from "@/app/components/recovery";
-import SleepDataUpload from "@/app/components/SleepDataUpload";
-import { useState } from "react";
+import RecoveryOverview from "@/app/components/recovery/RecoveryOverview";
+import { useEffect, useState } from "react";
+import { withProviderAuth } from "@/lib/oauthClient";
 
 // Define types for better type safety
 interface SleepDataItem {
@@ -57,20 +58,6 @@ interface SleepDataItem {
   sleep_algorithm_version: string;
   time_in_bed: number;
   total_sleep_duration: number;
-  type: string;
-}
-
-interface SessionData {
-  day: string;
-  bedtime_start: string;
-  bedtime_end: string;
-  total_sleep_duration: number;
-  deep_sleep_duration: number;
-  rem_sleep_duration: number;
-  average_heart_rate: number;
-  average_hrv: number;
-  efficiency: number;
-  latency: number;
   type: string;
 }
 
@@ -172,6 +159,7 @@ export default function RecoveryPage() {
 
   const [startDate, setStartDate] = useState(threeMonthsAgoStr);
   const [endDate, setEndDate] = useState(todayStr);
+  const [dataLoading, setDataLoading] = useState(false);
   const [sleepData, setSleepData] = useState<SleepDataItem[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [readinessData, setReadinessData] = useState<ReadinessDataItem[]>([]);
@@ -261,7 +249,7 @@ export default function RecoveryPage() {
       // Fetch Oura sleep data for HRV and RHR
       const sleepRes = await fetch("/api/sleep/sleep_detail_days", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -322,7 +310,7 @@ export default function RecoveryPage() {
       // Fetch Oura daily sleep data for sleep scores (separate from session data)
       const dailySleepRes = await fetch("/api/sleep/oura", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -358,7 +346,7 @@ export default function RecoveryPage() {
       // Fetch Oura daily activity for active calories
       const activityRes = await fetch("/api/oura/daily_activity", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -399,7 +387,7 @@ export default function RecoveryPage() {
       // Fetch Oura stress data
       const stressRes = await fetch("/api/oura/daily_stress", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -432,7 +420,7 @@ export default function RecoveryPage() {
       // Fetch Oura resilience data
       const resilienceRes = await fetch("/api/oura/daily_resilience", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -467,7 +455,7 @@ export default function RecoveryPage() {
       // Fetch Oura readiness data
       const readinessRes = await fetch("/api/sleep/readiness", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: week.week_start,
           end_date: week.week_end,
@@ -588,7 +576,7 @@ export default function RecoveryPage() {
     try {
       const res = await fetch("/api/sleep/readiness", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({ start_date: startDate, end_date: endDate }),
       });
 
@@ -612,9 +600,9 @@ export default function RecoveryPage() {
     try {
       const res = await fetch("/api/sleep/sleep_detail_days", {
         method: "POST",
-        headers: {
+        headers: withProviderAuth("oura", {
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({ start_date: startDate, end_date: endDate }),
       });
 
@@ -634,36 +622,23 @@ export default function RecoveryPage() {
     }
   };
 
-  const selectedData = sleepData.find((item) => item.day === selectedDay);
-
-  const [sessionId, setSessionId] = useState("");
-  const [sessionData, setSessionData] = useState<SessionData | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const fetchSessionData = async () => {
+  // One refresh for the whole page: sleep and readiness together, populated
+  // from the database first (only never-fetched ranges hit Oura).
+  const refreshAll = async () => {
+    setDataLoading(true);
     try {
-      setLoading(true);
-      const res = await fetch("/api/sleep/sleep_details", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setSessionData(data);
-      } else {
-        alert(data.error || "Unknown error");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to fetch session data");
+      await Promise.all([handleSync(), handleReadinessSync()]);
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
+
+  useEffect(() => {
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedData = sleepData.find((item) => item.day === selectedDay);
 
   const handleBurnoutCalculation = async () => {
     // Strava access token no longer required
@@ -672,7 +647,7 @@ export default function RecoveryPage() {
       setBurnoutLoading(true);
       const res = await fetch("/api/burnout/calculate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           start_date: startDate,
           end_date: endDate,
@@ -725,47 +700,33 @@ export default function RecoveryPage() {
             {/* 1. Recovery Header */}
             <RecoveryHeader />
 
+            {/* 1.2 At-a-glance overview: latest night, trends, night picker */}
+            <RecoveryOverview
+              nights={sleepData}
+              startDate={startDate}
+              endDate={endDate}
+              onStartDate={setStartDate}
+              onEndDate={setEndDate}
+              onRefresh={refreshAll}
+              loading={dataLoading}
+              selectedDay={selectedDay}
+              onSelectDay={(day) => {
+                setSelectedDay(day);
+                setSelectedReadinessDay(day);
+              }}
+            />
+
             {/* 1.5. Sleep Data Upload */}
             <div className="px-4">
-              <SleepDataUpload />
             </div>
 
-            {/* 2. Sleep Data Range Picker */}
-            <h2 className="px-4 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
-              Load Sleep Data by Date Range
-            </h2>
-
-            <div className="flex items-center gap-4 px-4 pb-4">
-              <label className="text-white text-sm">
-                Start Date:
-                <input
-                  type="date"
-                  className="ml-2 rounded-md bg-[#1e2a28] text-white p-1 text-sm border border-[#3b5450]"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label className="text-white text-sm">
-                End Date:
-                <input
-                  type="date"
-                  className="ml-2 rounded-md bg-[#1e2a28] text-white p-1 text-sm border border-[#3b5450]"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </label>
-              <button
-                onClick={handleSync}
-                className="rounded-lg bg-[#283937] px-4 py-2 text-sm font-bold text-white hover:bg-[#36514e] transition"
-              >
-                Sync Sleep Data
-              </button>
-            </div>
-
-            {/* 3. Sleep Data Display */}
+            {/* 3. Night details for the selected day */}
             {sleepData.length > 0 && (
               <div className="px-4 pb-6 text-sm text-white">
-                <label className="font-semibold mr-2">Select Day:</label>
+                <h2 className="pb-3 text-[22px] font-bold leading-tight tracking-[-0.015em] text-white">
+                  Night details
+                </h2>
+                <label className="font-semibold mr-2">Night:</label>
                 <select
                   value={selectedDay}
                   onChange={(e) => setSelectedDay(e.target.value)}
@@ -1010,6 +971,17 @@ export default function RecoveryPage() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Raw payload for the night already selected above — no
+                        session-id hunting required. */}
+                    <details className="rounded-lg border border-[#2b3a38] bg-[#151f1e] p-3">
+                      <summary className="cursor-pointer text-sm font-semibold text-[#9cbab5] hover:text-white">
+                        Advanced: raw session data for {selectedData.day}
+                      </summary>
+                      <pre className="mt-3 max-h-96 overflow-auto rounded bg-[#0f1817] p-3 text-xs leading-relaxed text-[#9cbab5]">
+                        {JSON.stringify(selectedData, null, 2)}
+                      </pre>
+                    </details>
                   </div>
                 )}
               </div>
@@ -1018,14 +990,8 @@ export default function RecoveryPage() {
             {/* 4. Readiness Data Section */}
             <div className="px-4 pb-6 text-sm text-white">
               <h2 className="text-[22px] font-bold leading-tight tracking-[-0.015em] pb-3">
-                Daily Readiness Scores
+                Readiness details
               </h2>
-              <button
-                onClick={handleReadinessSync}
-                className="rounded-lg bg-[#283937] px-4 py-2 text-sm font-bold text-white hover:bg-[#36514e] transition mb-4"
-              >
-                Sync Readiness Data
-              </button>
 
               {readinessData.length > 0 && (
                 <>
@@ -1089,79 +1055,6 @@ export default function RecoveryPage() {
               )}
             </div>
 
-            {/* 5. Sleep Session Data Section */}
-            <div className="px-4 pb-6 text-sm text-white">
-              <h2 className="text-[22px] font-bold leading-tight tracking-[-0.015em] pb-3">
-                Sleep Session Details
-              </h2>
-
-              <div className="flex items-center gap-4 mb-4">
-                <input
-                  type="text"
-                  placeholder="Enter Session ID"
-                  className="rounded-md bg-[#1e2a28] border border-[#3b5450] p-2 text-white text-sm flex-1 max-w-xs"
-                  value={sessionId}
-                  onChange={(e) => setSessionId(e.target.value)}
-                />
-                <button
-                  onClick={fetchSessionData}
-                  className="rounded-lg bg-[#283937] px-4 py-2 text-sm font-bold text-white hover:bg-[#36514e] transition"
-                >
-                  {loading ? "Loading..." : "Get Data"}
-                </button>
-              </div>
-
-              {sessionData && (
-                <div className="bg-[#1e2a28] p-4 rounded-lg space-y-2 border border-[#3b5450]">
-                  <h3 className="font-bold text-lg text-indigo-400 mb-3">
-                    Session Data
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <p>
-                        <strong>Day:</strong> {sessionData.day}
-                      </p>
-                      <p>
-                        <strong>Bedtime:</strong> {sessionData.bedtime_start} →{" "}
-                        {sessionData.bedtime_end}
-                      </p>
-                      <p>
-                        <strong>Type:</strong> {sessionData.type}
-                      </p>
-                      <p>
-                        <strong>Efficiency:</strong> {sessionData.efficiency}%
-                      </p>
-                      <p>
-                        <strong>Latency:</strong>{" "}
-                        {Math.round(sessionData.latency / 60)} min
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <p>
-                        <strong>Total Sleep:</strong>{" "}
-                        {Math.round(sessionData.total_sleep_duration / 60)} min
-                      </p>
-                      <p>
-                        <strong>Deep Sleep:</strong>{" "}
-                        {Math.round(sessionData.deep_sleep_duration / 60)} min
-                      </p>
-                      <p>
-                        <strong>REM Sleep:</strong>{" "}
-                        {Math.round(sessionData.rem_sleep_duration / 60)} min
-                      </p>
-                      <p>
-                        <strong>Avg Heart Rate:</strong>{" "}
-                        {sessionData.average_heart_rate} bpm
-                      </p>
-                      <p>
-                        <strong>Avg HRV:</strong> {sessionData.average_hrv} ms
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* 6. Burnout Calculation Section */}
             <div className="px-4 pb-6 text-sm text-white">
               <h2 className="text-[22px] font-bold leading-tight tracking-[-0.015em] pb-3">
@@ -1173,35 +1066,15 @@ export default function RecoveryPage() {
                   Configuration
                 </h3>
 
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Strava configuration removed */}
+                <p className="text-xs text-[#9cbab5]">
+                  Uses the date range from the overview above. Weights are
+                  optional — the defaults match the documented formula.
+                </p>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-2">
-                      Date Range:
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="date"
-                        className="flex-1 rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                      />
-                      <span className="text-white self-center">to</span>
-                      <input
-                        type="date"
-                        className="flex-1 rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Score Weights:
-                  </label>
+                <details>
+                  <summary className="cursor-pointer text-sm font-semibold text-[#9cbab5] hover:text-white">
+                    Adjust score weights (optional)
+                  </summary>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs mb-1">
@@ -1337,12 +1210,12 @@ export default function RecoveryPage() {
                       />
                     </div>
                   </div>
-                </div>
+                </details>
 
                 <button
                   onClick={handleBurnoutCalculation}
                   disabled={burnoutLoading}
-                  className="w-full rounded-lg bg-[#283937] px-4 py-3 text-sm font-bold text-white hover:bg-[#36514e] transition disabled:opacity-50"
+                  className="w-full rounded-lg bg-[#0cf2d0] px-4 py-3 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                 >
                   {burnoutLoading ? "Calculating..." : "Calculate Burnout Risk"}
                 </button>

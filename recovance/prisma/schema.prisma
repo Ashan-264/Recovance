@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+// Connection URL lives in prisma.config.ts (Prisma 7 no longer accepts `url` here).
+datasource db {
+  provider = "postgresql"
+}
+
+/// One row per calendar day. Garmin exports sleep as weekly ranges, which the
+/// upload route expands into a row per day, so `date` is the natural key.
+model GarminSleep {
+  id                 BigInt   @id @default(autoincrement())
+  date               DateTime @unique @db.Date
+  avgDurationMinutes Int?     @map("avg_duration_minutes")
+  avgBedtime         String?  @map("avg_bedtime")
+  avgWakeTime        String?  @map("avg_wake_time")
+  originalDateRange  String?  @map("original_date_range")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([date])
+  @@map("garmin_sleep")
+}
+
+/// A single Garmin activity. `date` is the activity start timestamp; together
+/// with the activity type it identifies a workout, so re-uploading the same
+/// CSV updates rows instead of duplicating them.
+model GarminActivity {
+  id                  BigInt    @id @default(autoincrement())
+  activityType        String    @map("activity_type")
+  date                DateTime? @db.Timestamptz(6)
+  favorite            Boolean   @default(false)
+  title               String?
+  distance            Decimal?  @db.Decimal(12, 3)
+  calories            Int?
+  timeMinutes         Int?      @map("time_minutes")
+  avgHr               Int?      @map("avg_hr")
+  maxHr               Int?      @map("max_hr")
+  aerobicTe           Decimal?  @map("aerobic_te") @db.Decimal(6, 2)
+  avgSpeed            Decimal?  @map("avg_speed") @db.Decimal(10, 3)
+  maxSpeed            Decimal?  @map("max_speed") @db.Decimal(10, 3)
+  totalAscent         Int?      @map("total_ascent")
+  totalDescent        Int?      @map("total_descent")
+  trainingStressScore Decimal?  @map("training_stress_score") @db.Decimal(10, 2)
+  totalStrokes        Int?      @map("total_strokes")
+  minTemp             Decimal?  @map("min_temp") @db.Decimal(6, 2)
+  decompression       String?
+  bestLapTime         String?   @map("best_lap_time")
+  numberOfLaps        Int?      @map("number_of_laps")
+  maxTemp             Decimal?  @map("max_temp") @db.Decimal(6, 2)
+  movingTimeMinutes   Int?      @map("moving_time_minutes")
+  elapsedTimeMinutes  Int?      @map("elapsed_time_minutes")
+  minElevation        Int?      @map("min_elevation")
+  maxElevation        Int?      @map("max_elevation")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([date, activityType], name: "date_activityType")
+  @@index([date])
+  @@index([activityType])
+  @@map("garmin_activity")
+}
+
+/// A person using Recovance. Created the first time an OAuth connection is
+/// made; a single "local" user backs self-hosted single-user installs.
+model User {
+  id          String   @id @default(cuid())
+  email       String?  @unique
+  displayName String?  @map("display_name")
+  isLocal     Boolean  @default(false) @map("is_local")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  accounts         ConnectedAccount[]
+  sessions         Session[]
+  stravaActivities StravaActivity[]
+  ouraDaily        OuraDailyRecord[]
+  ouraSleepPeriods OuraSleepPeriod[]
+  syncRanges       SyncRange[]
+  stravaStreams    StravaStream[]
+  activityMetrics  ActivityMetric[]
+  metricDaily      MetricDaily[]
+  providerCache    ProviderCacheEntry[]
+
+  @@map("users")
+}
+
+/// Browser session issued after a successful OAuth connection.
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Provider tokens held server-side so background reads and cache backfills
+/// do not depend on the browser.
+model ConnectedAccount {
+  id                String    @id @default(cuid())
+  userId            String    @map("user_id")
+  provider          String
+  providerAccountId String    @map("provider_account_id")
+  accessToken       String    @map("access_token")
+  refreshToken      String?   @map("refresh_token")
+  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(6)
+  scope             String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@unique([provider, providerAccountId])
+  @@map("connected_accounts")
+}
+
+/// Cached Strava activity. Indexed columns cover querying; `payload` keeps the
+/// full API object so no field is lost to the cache.
+model StravaActivity {
+  id                 BigInt   @id @default(autoincrement())
+  userId             String   @map("user_id")
+  stravaId           BigInt   @map("strava_id")
+  startDate          DateTime @map("start_date") @db.Timestamptz(6)
+  type               String
+  name               String?
+  distance           Float?
+  movingTime         Int?     @map("moving_time")
+  totalElevationGain Float?   @map("total_elevation_gain")
+  payload            Json
+  fetchedAt          DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stravaId])
+  @@index([userId, startDate])
+  @@map("strava_activities")
+}
+
+/// One row per Oura daily-collection document (daily_sleep, daily_readiness,
+/// daily_activity, daily_stress, daily_resilience).
+model OuraDailyRecord {
+  id        BigInt   @id @default(autoincrement())
+  userId    String   @map("user_id")
+  dataset   String
+  day       DateTime @db.Date
+  payload   Json
+  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dataset, day])
+  @@index([userId, dataset, day])
+  @@map("oura_daily_records")
+}
+
+/// Individual Oura sleep periods; a day can hold more than one.
+model OuraSleepPeriod {
+  id        BigInt   @id @default(autoincrement())
+  userId    String   @map("user_id")
+  ouraId    String   @map("oura_id")
+  day       DateTime @db.Date
+  payload   Json
+  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ouraId])
+  @@index([userId, day])
+  @@map("oura_sleep_periods")
+}
+
+/// Date ranges already fetched for a dataset. Without this, an empty result
+/// is indistinguishable from "never fetched", and gaps would be re-requested
+/// forever or silently treated as no data.
+model SyncRange {
+  id      BigInt   @id @default(autoincrement())
+  userId  String   @map("user_id")
+  dataset String
+  start   DateTime @db.Date
+  end     DateTime @db.Date
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dataset])
+  @@map("sync_ranges")
+}
+
+/// Raw per-activity Strava streams (time, velocity, altitude, grade, HR).
+/// Stored verbatim so derived metrics can be recomputed without re-fetching —
+/// stream requests are the scarcest resource under Strava's rate limits.
+model StravaStream {
+  id         BigInt   @id @default(autoincrement())
+  userId     String   @map("user_id")
+  stravaId   BigInt   @map("strava_id")
+  payload    Json
+  pointCount Int      @map("point_count")
+  fetchedAt  DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stravaId])
+  @@index([userId])
+  @@map("strava_streams")
+}
+
+/// Derived per-activity metrics (load split, durability, climb decay …).
+/// `metrics` is an open JSON bag so new features add fields without a migration;
+/// `streamsAvailable` records what the compute functions actually had to work with.
+model ActivityMetric {
+  id               BigInt   @id @default(autoincrement())
+  userId           String   @map("user_id")
+  stravaId         BigInt   @map("strava_id")
+  startDate        DateTime @map("start_date") @db.Timestamptz(6)
+  type             String
+  sessionType      String?  @map("session_type")
+  streamsAvailable Boolean  @default(false) @map("streams_available")
+  hasHeartrate     Boolean  @default(false) @map("has_heartrate")
+  metrics          Json
+  computedAt       DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stravaId])
+  @@index([userId, startDate])
+  @@map("activity_metrics")
+}
+
+/// Derived per-day values: Oura baselines (rolling median/MAD) and daily
+/// aggregates. One row per day per user; `values` is an open JSON bag.
+model MetricDaily {
+  id         BigInt   @id @default(autoincrement())
+  userId     String   @map("user_id")
+  day        DateTime @db.Date
+  values     Json
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([userId, day])
+  @@map("metric_daily")
+}
+
+/// Generic read-through cache for provider resources that are not date-ranged:
+/// athlete stats (refreshed on a TTL), a single activity or sleep session
+/// (immutable once complete), WHOOP collections keyed by their query.
+/// Date-ranged collections use SyncRange instead, which tracks coverage.
+model ProviderCacheEntry {
+  id        BigInt    @id @default(autoincrement())
+  userId    String    @map("user_id")
+  provider  String
+  resource  String
+  payload   Json
+  fetchedAt DateTime  @default(now()) @map("fetched_at") @db.Timestamptz(6)
+  /// null means the resource never goes stale.
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, resource])
+  @@index([userId, provider])
+  @@map("provider_cache_entries")
+}

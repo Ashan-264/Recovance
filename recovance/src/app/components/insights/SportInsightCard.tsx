@@ -27,7 +27,7 @@ export default function SportInsightCard({
         {mainValue}
       </p>
       <div className="flex gap-1">
-        <p className="text-[#9db9b5] text-base font-normal leading-normal">
+        <p className="text-[#9cbab5] text-base font-normal leading-normal">
           {subLabel}
         </p>
         <p
@@ -45,7 +45,7 @@ export default function SportInsightCard({
             {xLabels.map((label) => (
               <p
                 key={label}
-                className="text-[#9db9b5] text-[13px] font-bold leading-normal tracking-[0.015em]"
+                className="text-[#9cbab5] text-[13px] font-bold leading-normal tracking-[0.015em]"
               >
                 {label}
               </p>

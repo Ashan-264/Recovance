@@ -21,7 +21,7 @@ export default function SportTabs() {
               `flex flex-col items-center justify-center pb-[13px] pt-4 text-sm font-bold leading-normal tracking-[0.015em] ` +
               (i === 0
                 ? "border-b-[3px] border-b-white text-white"
-                : "border-b-[3px] border-b-transparent text-[#9db9b5]")
+                : "border-b-[3px] border-b-transparent text-[#9cbab5]")
             }
           >
             <p>{sport.label}</p>

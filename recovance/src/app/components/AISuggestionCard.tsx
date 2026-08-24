@@ -19,8 +19,8 @@ export default function AISuggestionCard({
       <Image
         src={backgroundSrc}
         alt={backgroundAlt}
-        layout="fill"
-        objectFit="cover"
+        fill
+        style={{ objectFit: "cover" }}
         className="opacity-80"
       />
       <div className="absolute inset-0 bg-black bg-opacity-40 flex flex-col justify-end p-4">

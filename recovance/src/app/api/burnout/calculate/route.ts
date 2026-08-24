@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getOuraToken } from "@/lib/ouraToken";
 
 interface BurnoutCalculationRequest {
   start_date: string;
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
     // Strava dependency removed. Keep an empty activities array for compatibility with older code.
 
     // Fetch Oura sleep data for the same period
-    const ouraToken = process.env.OURA_API_TOKEN;
+    const ouraToken = await getOuraToken(req);
     let sleepData: OuraSleepData[] = [];
     let dailyActivityData: OuraDailyActivityData[] = [];
     let readinessData: OuraReadinessData[] = [];

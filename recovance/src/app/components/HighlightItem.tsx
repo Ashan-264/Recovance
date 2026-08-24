@@ -24,8 +24,8 @@ export default function HighlightItem({
         <Image
           src={imageSrc}
           alt={imageAlt}
-          layout="fill"
-          objectFit="cover"
+          fill
+          style={{ objectFit: "cover" }}
           className="rounded-r-lg"
         />
       </div>

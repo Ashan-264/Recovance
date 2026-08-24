@@ -18,7 +18,8 @@ This guide explains how to set up the Strava API integration and use the burnout
 
 ### 2. Environment Variables
 
-Add the following environment variables to your `.env.local` file:
+Copy `example.env` to `.env.local` and fill in your values (see `example.env`
+for the full list, including Oura and WHOOP OAuth credentials):
 
 ```bash
 STRAVA_CLIENT_ID=your_client_id_here
@@ -28,24 +29,22 @@ OURA_API_TOKEN=your_oura_token_here
 
 ### 3. Get Strava Access Token
 
-#### Option A: Using Strava's OAuth Flow (Recommended for Production)
+#### Option A: Built-in OAuth Flow (Recommended)
 
-1. Redirect users to Strava's authorization URL:
+1. Open the app and go to `/connect`
+2. Click **Connect** next to Strava — you will be redirected to Strava to
+   authorize the app
+3. After you approve, tokens are stored in your browser and refreshed
+   automatically when they expire
 
-   ```
-   https://www.strava.com/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=read,activity:read_all
-   ```
+Under the hood this uses:
 
-2. After authorization, Strava will redirect to your callback URL with a `code` parameter
+- `GET /api/auth/strava/login` – redirects to Strava's authorization page
+- `GET /api/auth/strava/callback` – exchanges the code for tokens
+- `POST /api/auth/strava/refresh` – refreshes expired access tokens
 
-3. Exchange the code for access and refresh tokens:
-   ```bash
-   curl -X POST https://www.strava.com/oauth/token \
-     -F client_id=YOUR_CLIENT_ID \
-     -F client_secret=YOUR_CLIENT_SECRET \
-     -F code=AUTHORIZATION_CODE \
-     -F grant_type=authorization_code
-   ```
+The same flow exists for Oura (`/api/auth/oura/...`) and WHOOP
+(`/api/auth/whoop/...`).
 
 #### Option B: Manual Token Generation (For Development/Testing)
 

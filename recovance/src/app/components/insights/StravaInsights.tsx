@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import ChartLine from "./ChartLine";
 
 interface StravaActivity {
@@ -63,7 +63,6 @@ interface StravaActivity {
 interface StravaInsightsProps {
   startDate: string;
   endDate: string;
-  stravaToken: string;
 }
 
 interface WeeklyData {
@@ -76,19 +75,13 @@ interface WeeklyData {
 export default function StravaInsights({
   startDate,
   endDate,
-  stravaToken,
-}: StravaInsightsProps) {
+  }: StravaInsightsProps) {
   const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Remove auto-loading - data will be fetched when component mounts only if manually triggered
-  // useEffect(() => {
-  //   if (stravaToken) {
-  //     fetchStravaData();
-  //   }
-  // }, [startDate, endDate, stravaToken]);
-
-  const fetchStravaData = async () => {
+  // Loads straight from the database — no token involved, so the analytics
+  // render by default for anyone opening the page.
+  const fetchStravaData = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch("/api/strava/activities", {
@@ -97,9 +90,10 @@ export default function StravaInsights({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          access_token: stravaToken,
           start_date: startDate,
           end_date: endDate,
+          cache_only: true,
+          slim: true,
         }),
       });
 
@@ -112,7 +106,11 @@ export default function StravaInsights({
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate]);
+
+  useEffect(() => {
+    fetchStravaData();
+  }, [fetchStravaData]);
 
   const processWeeklyData = (activities: StravaActivity[]) => {
     const weeklyMap = new Map<
@@ -166,16 +164,6 @@ export default function StravaInsights({
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  if (!stravaToken) {
-    return (
-      <div className="bg-[#1e2a28] p-6 rounded-lg border border-[#3b5450]">
-        <div className="text-center text-gray-400">
-          Please enter your Strava access token to view insights
-        </div>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="bg-[#1e2a28] p-6 rounded-lg border border-[#3b5450]">
@@ -188,17 +176,6 @@ export default function StravaInsights({
 
   return (
     <div className="space-y-6">
-      {/* Load Data Button */}
-      <div className="bg-[#1e2a28] p-4 rounded-lg border border-[#3b5450]">
-        <button
-          onClick={fetchStravaData}
-          disabled={loading || !stravaToken}
-          className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
-        >
-          {loading ? "Loading..." : "Load Strava Data"}
-        </button>
-      </div>
-
       <h3 className="text-lg font-bold text-white mb-4">Strava Insights</h3>
 
       {/* Activity Minutes Trend */}

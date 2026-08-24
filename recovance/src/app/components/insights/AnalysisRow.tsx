@@ -27,7 +27,7 @@ export default function AnalysisRow({
         {lines.map((line, i) => (
           <p
             key={i}
-            className="text-[#9db9b5] text-sm font-normal leading-normal"
+            className="text-[#9cbab5] text-sm font-normal leading-normal"
           >
             {line}
           </p>

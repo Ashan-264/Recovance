@@ -5,8 +5,17 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useCallback,
   ReactNode,
 } from "react";
+import {
+  isExpired,
+  loadTokens,
+  refreshTokens,
+  saveTokens,
+  clearTokens,
+  TOKENS_UPDATED_EVENT,
+} from "@/lib/oauthClient";
 
 interface StravaContextType {
   stravaToken: string;
@@ -32,38 +41,57 @@ interface StravaProviderProps {
 export const StravaProvider: React.FC<StravaProviderProps> = ({ children }) => {
   const [stravaToken, setStravaTokenState] = useState<string>("");
 
-  // Load token from localStorage on component mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedToken = localStorage.getItem("strava_token");
-      if (savedToken) {
-        setStravaTokenState(savedToken);
-      }
+  // Load the stored token, refreshing it first when the OAuth flow gave us
+  // a refresh token and the access token is expired (Strava tokens last 6h).
+  const syncFromStorage = useCallback(async () => {
+    const stored = loadTokens("strava");
+
+    if (!stored) {
+      setStravaTokenState("");
+      return;
     }
+
+    if (isExpired(stored) && stored.refreshToken) {
+      const refreshed = await refreshTokens("strava");
+      setStravaTokenState(refreshed?.accessToken || stored.accessToken);
+      return;
+    }
+
+    setStravaTokenState(stored.accessToken);
   }, []);
 
-  // Save token to localStorage whenever it changes
+  useEffect(() => {
+    syncFromStorage();
+
+    // Stay in sync when the /connect page saves or clears tokens
+    const onTokensUpdated = () => syncFromStorage();
+    window.addEventListener(TOKENS_UPDATED_EVENT, onTokensUpdated);
+    return () =>
+      window.removeEventListener(TOKENS_UPDATED_EVENT, onTokensUpdated);
+  }, [syncFromStorage]);
+
+  // Manual token entry (StravaConfig) — no refresh token or known expiry.
   const setStravaToken = (token: string) => {
     setStravaTokenState(token);
     if (typeof window !== "undefined") {
       if (token) {
-        localStorage.setItem("strava_token", token);
+        saveTokens("strava", { accessToken: token });
       } else {
-        localStorage.removeItem("strava_token");
+        clearTokens("strava");
       }
     }
   };
 
-  // Get the best available token (user input > localStorage > environment variable)
+  // Get the best available token (user input / OAuth > environment variable)
   const getStravaToken = (): string => {
     if (stravaToken) {
       return stravaToken;
     }
 
     if (typeof window !== "undefined") {
-      const savedToken = localStorage.getItem("strava_token");
-      if (savedToken) {
-        return savedToken;
+      const stored = loadTokens("strava");
+      if (stored) {
+        return stored.accessToken;
       }
     }
 

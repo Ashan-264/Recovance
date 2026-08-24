@@ -2,16 +2,16 @@
 
 // pages/dashboard.tsx
 import Head from "next/head";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardHeader from "@/app/components/Header";
 import { useStrava } from "@/app/contexts/StravaContext";
-import StravaConfig from "@/app/components/StravaConfig";
 import {
-  WelcomeBanner,
-  TrendVisualizer,
-  AISuggestions,
-  ActionButtons,
-} from "@/app/components/dashboard";
+  describeStravaError,
+  loadCachedActivities,
+  postStrava,
+} from "@/lib/stravaClient";
+import StravaConfig from "@/app/components/StravaConfig";
+import { WelcomeBanner, TrendVisualizer } from "@/app/components/dashboard";
 import dynamic from "next/dynamic";
 
 const ActivityMap = dynamic(
@@ -88,7 +88,7 @@ interface StravaActivity {
   comment_count: number;
   athlete_count: number;
   photo_count: number;
-  map?: unknown;
+  map?: { summary_polyline?: string } | null;
   has_kudoed: boolean;
   hide_from_home: boolean;
   workout_type?: number;
@@ -96,42 +96,51 @@ interface StravaActivity {
 }
 
 export default function DashboardPage() {
-  const { getStravaToken, hasValidToken } = useStrava();
+  const { hasValidToken } = useStrava();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [mapMode, setMapMode] = useState<"interactive" | "flat">("interactive");
 
+  // Show whatever is already stored as soon as the page opens; the button
+  // below refreshes from Strava for anything not yet cached.
+  useEffect(() => {
+    let cancelled = false;
+
+    loadCachedActivities<StravaActivity>(
+      "1970-01-01",
+      new Date().toISOString().split("T")[0]
+    ).then((cached) => {
+      if (!cancelled && cached.length > 0) {
+        setActivities(cached);
+        setLoadedFromCache(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fetchActivities = async () => {
-    const token = getStravaToken();
-    if (!token) {
-      console.error("No Strava token available");
-      return;
-    }
     setLoading(true);
+    setError(null);
     try {
       // Fetch ALL activities ever recorded (from 1970 to now)
       const startDate = "1970-01-01";
       const endDate = new Date().toISOString().split("T")[0];
 
-      const response = await fetch("/api/strava/activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          access_token: token,
-          start_date: startDate,
-          end_date: endDate,
-        }),
-      });
+      const data = await postStrava<{ activities?: StravaActivity[] }>(
+        "/api/strava/activities",
+        { start_date: startDate, end_date: endDate }
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`Fetched ${data.activities?.length || 0} activities`);
-        setActivities(data.activities || []);
-      } else {
-        console.error("Failed to fetch activities");
-      }
-    } catch (error) {
-      console.error("Error fetching activities:", error);
+      setActivities(data.activities || []);
+      setLoadedFromCache(false);
+    } catch (err) {
+      console.error("Error fetching activities:", err);
+      setError(describeStravaError(err));
     } finally {
       setLoading(false);
     }
@@ -149,7 +158,7 @@ export default function DashboardPage() {
     <>
       <Head>
         {/* The global <title> is already set in _app.tsx, so you could omit this or override it */}
-        <title>Stitch Design · Dashboard</title>
+        <title>Recovance · Dashboard</title>
       </Head>
 
       <div
@@ -161,7 +170,7 @@ export default function DashboardPage() {
           <DashboardHeader />
 
           {/* 2. Main Content */}
-          <div className="px-40 flex flex-1 justify-center py-5">
+          <div className="flex flex-1 justify-center px-4 py-5 md:px-10 lg:px-40">
             <div className="layout-content-container flex flex-col max-w-[960px] flex-1">
               {/* 2a. Welcome Banner */}
               <WelcomeBanner />
@@ -179,21 +188,34 @@ export default function DashboardPage() {
                       Activity Data
                     </h3>
                     <p className="text-sm text-gray-400">
-                      Load your Strava activities to display on the map
+                      {activities.length > 0
+                        ? `${activities.length.toLocaleString()} activities loaded${
+                            loadedFromCache ? " from your database" : ""
+                          }`
+                        : "No activities stored yet — sync to pull them from Strava"}
                     </p>
                   </div>
                   <button
                     onClick={fetchActivities}
-                    disabled={loading || !hasValidToken}
+                    disabled={loading}
                     className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
                   >
-                    {loading ? "Loading..." : "Load Activities"}
+                    {loading
+                      ? "Syncing..."
+                      : activities.length > 0
+                      ? "Sync new activities"
+                      : "Load Activities"}
                   </button>
                 </div>
-                {!hasValidToken && (
+                {!hasValidToken && activities.length === 0 && (
                   <p className="text-sm text-red-400 mt-2">
-                    ⚠️ Configure Strava token above to load activities
+                    ⚠️ Connect Strava to load activities
                   </p>
+                )}
+                {error && (
+                  <div className="mt-3 rounded-lg border border-red-600/40 bg-red-900/20 p-3">
+                    <p className="text-sm text-red-400">{error}</p>
+                  </div>
                 )}
               </div>
 
@@ -231,12 +253,6 @@ export default function DashboardPage() {
 
               {/* 2f. Trend Visualizer */}
               <TrendVisualizer />
-
-              {/* 2g. AI Suggestions */}
-              <AISuggestions />
-
-              {/* 2h. Bottom Action Buttons */}
-              <ActionButtons />
             </div>
           </div>
         </div>

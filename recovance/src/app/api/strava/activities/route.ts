@@ -1,118 +1,75 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getStravaActivities, StravaUnavailableError } from "@/lib/stravaCache";
+import { getCurrentUser } from "@/lib/session";
 
-interface StravaActivity {
-  id: number;
-  type: string;
-  name: string;
-  distance: number;
-  moving_time: number;
-  elapsed_time: number;
-  total_elevation_gain: number;
-  start_date: string;
-  start_date_local: string;
-  average_speed: number;
-  max_speed: number;
-  average_cadence?: number;
-  average_watts?: number;
-  weighted_average_watts?: number;
-  kilojoules?: number;
-  average_heartrate?: number;
-  max_heartrate?: number;
-  elev_high?: number;
-  elev_low?: number;
-  upload_id?: number;
-  external_id?: string;
-  trainer: boolean;
-  commute: boolean;
-  manual: boolean;
-  private: boolean;
-  visibility: string;
-  flagged: boolean;
-  gear_id?: string;
-  start_latlng?: number[];
-  end_latlng?: number[];
-  average_temp?: number;
-  average_grade_adjusted_speed?: number;
-  average_grade?: number;
-  positive_elevation_gain?: number;
-  negative_elevation_gain?: number;
-  calories?: number;
-  description?: string;
-  photos?: unknown;
-  gear?: unknown;
-  device_name?: string;
-  embed_token?: string;
-  splits_metric?: unknown[];
-  splits_standard?: unknown[];
-  laps?: unknown[];
-  best_efforts?: unknown[];
-  kudos_count: number;
-  comment_count: number;
-  athlete_count: number;
-  photo_count: number;
-  map?: unknown;
-  has_kudoed: boolean;
-  hide_from_home: boolean;
-  workout_type?: number;
-  suffer_score?: number;
-}
-
+/**
+ * Returns Strava activities for a date range.
+ *
+ * Reads from the local cache first and fetches only date ranges that have
+ * never been retrieved. `access_token` in the body is still honoured for
+ * callers that hold a token client-side, but is no longer required once the
+ * account is connected.
+ */
 export async function POST(request: NextRequest) {
   try {
-    const { access_token, start_date, end_date } = await request.json();
+    const body = await request.json();
+    const { access_token, start_date, end_date, cache_only, slim } = body;
 
-    if (!access_token) {
+    if (!start_date || !end_date) {
       return NextResponse.json(
-        { error: "Strava access token is required" },
+        { error: "start_date and end_date are required" },
         { status: 400 }
       );
     }
 
-    const startTimestamp = Math.floor(new Date(start_date).getTime() / 1000);
-    const endTimestamp = Math.floor(new Date(end_date).getTime() / 1000);
+    const user = await getCurrentUser(request);
 
-    let allActivities: StravaActivity[] = [];
-    let page = 1;
-    const perPage = 200;
+    const result = await getStravaActivities(user.id, start_date, end_date, {
+      overrideToken:
+        typeof access_token === "string" && access_token ? access_token : undefined,
+      cacheOnly: cache_only === true,
+    });
 
-    while (true) {
-      const response = await fetch(
-        `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=${perPage}&page=${page}`,
-        {
-          headers: {
-            Authorization: `Bearer ${access_token}`,
-          },
-        }
-      );
+    // Slim mode keeps only the fields the pages read (~70% smaller): full
+    // payloads stay available to callers that ask for them.
+    const activities =
+      slim === true
+        ? result.activities.map((activity) => {
+            const a = activity as Record<string, unknown>;
+            const map = a.map as { summary_polyline?: string } | null;
+            return {
+              id: a.id,
+              type: a.sport_type ?? a.type,
+              name: a.name,
+              distance: a.distance,
+              moving_time: a.moving_time,
+              elapsed_time: a.elapsed_time,
+              total_elevation_gain: a.total_elevation_gain,
+              start_date: a.start_date,
+              start_date_local: a.start_date_local,
+              average_speed: a.average_speed,
+              max_speed: a.max_speed,
+              average_heartrate: a.average_heartrate,
+              max_heartrate: a.max_heartrate,
+              suffer_score: a.suffer_score,
+              start_latlng: a.start_latlng,
+              end_latlng: a.end_latlng,
+              map: map?.summary_polyline
+                ? { summary_polyline: map.summary_polyline }
+                : null,
+            };
+          })
+        : result.activities;
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        return NextResponse.json(
-          { error: `Strava API error: ${errorText}` },
-          { status: response.status }
-        );
-      }
-
-      const activities: StravaActivity[] = await response.json();
-
-      // If no more activities, break the loop
-      if (activities.length === 0) {
-        break;
-      }
-
-      allActivities = allActivities.concat(activities);
-      page++;
-
-      // Safety check to prevent infinite loops
-      if (page > 50) {
-        console.warn("Reached maximum page limit (50), stopping pagination");
-        break;
-      }
+    return NextResponse.json({
+      activities,
+      cache: { hit: result.servedFromCache, fetched: result.fetchedRanges },
+    });
+  } catch (error) {
+    if (error instanceof StravaUnavailableError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
-    console.log(`Total activities fetched: ${allActivities.length}`);
-    return NextResponse.json({ activities: allActivities });
-  } catch (error) {
     console.error("Error fetching Strava activities:", error);
     return NextResponse.json(
       { error: "Failed to fetch Strava activities" },

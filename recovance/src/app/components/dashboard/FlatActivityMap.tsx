@@ -112,7 +112,7 @@ export default function FlatActivityMap({ activities }: ActivityMapProps) {
         map.current = null;
       }
     };
-  }, []);
+  }, [mapboxToken]);
 
   useEffect(() => {
     if (!map.current || activities.length === 0) return;

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getOuraToken } from "@/lib/ouraToken";
+import { getCurrentUser } from "@/lib/session";
+import { getStravaActivities } from "@/lib/stravaCache";
 
 interface MismatchRequest {
   start_date: string;
   end_date: string;
-  access_token: string;
+  access_token?: string;
 }
 
 interface StravaActivity {
@@ -77,35 +80,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Fetch Strava activities for the date range
-    const startTimestamp = Math.floor(new Date(start_date).getTime() / 1000);
-    const endTimestamp = Math.floor(new Date(end_date).getTime() / 1000);
-
-    console.log(
-      `Fetching Strava activities from ${startTimestamp} to ${endTimestamp}`
-    );
-
-    const activitiesResponse = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?after=${startTimestamp}&before=${endTimestamp}&per_page=200`,
-      {
-        headers: {
-          Authorization: `Bearer ${access_token}`,
-        },
-      }
-    );
-
-    if (!activitiesResponse.ok) {
-      const errorText = await activitiesResponse.text();
-      console.log(
-        `Strava API error: ${activitiesResponse.status} - ${errorText}`
-      );
-      return NextResponse.json(
-        { error: `Strava API error: ${errorText}` },
-        { status: activitiesResponse.status }
-      );
-    }
-
-    const activities: StravaActivity[] = await activitiesResponse.json();
+    // Activities come from the local cache; only uncovered date ranges hit
+    // Strava, and the token is resolved from the signed-in connection.
+    const user = await getCurrentUser(req);
+    const cached = await getStravaActivities(user.id, start_date, end_date, {
+      overrideToken: access_token || undefined,
+    });
+    const activities = cached.activities as unknown as StravaActivity[];
     console.log(`✅ Fetched ${activities.length} Strava activities`);
 
     // Debug: Show sample activity descriptions to identify Coros training load patterns
@@ -136,7 +117,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch Oura readiness data
-    const ouraToken = process.env.OURA_API_TOKEN;
+    const ouraToken = await getOuraToken(req);
     let readinessData: OuraReadinessData[] = [];
     let sleepData: OuraSleepData[] = [];
 

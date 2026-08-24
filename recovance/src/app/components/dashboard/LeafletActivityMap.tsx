@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -80,6 +80,49 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
+// Helper function to validate coordinates
+const isValidCoordinate = (lat: number, lng: number): boolean => {
+  return (
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    lat !== 0 &&
+    lng !== 0
+  );
+};
+
+// Helper function to create custom marker icon
+const createCustomMarkerIcon = (activityCount: number) => {
+  const size = Math.max(20, Math.min(30, 20 + activityCount * 2));
+  const color = "#10b981"; // teal color
+
+  return L.divIcon({
+    className: "custom-activity-marker",
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        background-color: ${color};
+        border: 3px solid white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: ${Math.max(10, Math.min(14, 10 + activityCount))}px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        cursor: pointer;
+      ">
+        ${activityCount}
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 const LeafletActivityMap: React.FC<LeafletActivityMapProps> = ({
   activities,
   stravaToken,
@@ -89,51 +132,8 @@ const LeafletActivityMap: React.FC<LeafletActivityMapProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper function to validate coordinates
-  const isValidCoordinate = (lat: number, lng: number): boolean => {
-    return (
-      lat >= -90 &&
-      lat <= 90 &&
-      lng >= -180 &&
-      lng <= 180 &&
-      lat !== 0 &&
-      lng !== 0
-    );
-  };
-
-  // Helper function to create custom marker icon
-  const createCustomMarkerIcon = (activityCount: number) => {
-    const size = Math.max(20, Math.min(30, 20 + activityCount * 2));
-    const color = "#10b981"; // teal color
-
-    return L.divIcon({
-      className: "custom-activity-marker",
-      html: `
-        <div style="
-          width: ${size}px;
-          height: ${size}px;
-          background-color: ${color};
-          border: 3px solid white;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: ${Math.max(10, Math.min(14, 10 + activityCount))}px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-          cursor: pointer;
-        ">
-          ${activityCount}
-        </div>
-      `,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-    });
-  };
-
   // Helper function to process activities and add markers
-  const processActivities = () => {
+  const processActivities = useCallback(() => {
     if (!mapInstanceRef.current || activities.length === 0) return;
 
     const map = mapInstanceRef.current;
@@ -230,7 +230,14 @@ const LeafletActivityMap: React.FC<LeafletActivityMapProps> = ({
       console.log("No valid activities to display");
       setError("No activities with valid locations found");
     }
-  };
+  }, [activities]);
+
+  // Keep the latest processActivities reachable from the map-init effect
+  // without making that effect re-create the map when activities change.
+  const processActivitiesRef = useRef(processActivities);
+  useEffect(() => {
+    processActivitiesRef.current = processActivities;
+  }, [processActivities]);
 
   useEffect(() => {
     if (!mapRef.current || !stravaToken) return;
@@ -256,7 +263,7 @@ const LeafletActivityMap: React.FC<LeafletActivityMapProps> = ({
     // Process activities after map is ready
     map.whenReady(() => {
       console.log("Leaflet map is ready");
-      processActivities();
+      processActivitiesRef.current();
       setIsLoading(false);
     });
 
@@ -287,7 +294,7 @@ const LeafletActivityMap: React.FC<LeafletActivityMapProps> = ({
 
       processActivities();
     }
-  }, [activities]);
+  }, [activities, processActivities]);
 
   if (!stravaToken) {
     return (

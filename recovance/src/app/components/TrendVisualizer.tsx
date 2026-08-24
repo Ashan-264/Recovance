@@ -4,6 +4,7 @@
 import React, { useState } from "react";
 import { Line } from "react-chartjs-2";
 import { useStrava } from "@/app/contexts/StravaContext";
+import { withProviderAuth } from "@/lib/oauthClient";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -220,7 +221,7 @@ export default function TrendVisualizer() {
       try {
         const readinessResponse = await fetch("/api/sleep/readiness", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
           body: JSON.stringify({ start_date: startDate, end_date: endDate }),
         });
         if (readinessResponse.ok) {
@@ -236,7 +237,7 @@ export default function TrendVisualizer() {
       try {
         const sleepResponse = await fetch("/api/sleep/oura", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: withProviderAuth("oura", { "Content-Type": "application/json" }),
           body: JSON.stringify({ start_date: startDate, end_date: endDate }),
         });
         if (sleepResponse.ok) {
