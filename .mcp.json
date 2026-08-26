@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "coros": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/cygnusb/coros-mcp.git",
+        "coros-mcp",
+        "serve"
+      ],
+      "env": {
+        "COROS_MCP_TOOLSET": "readonly"
+      }
+    }
+  }
+}

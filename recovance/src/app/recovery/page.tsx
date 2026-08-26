@@ -6,6 +6,7 @@ import { RecoveryHeader } from "@/app/components/recovery";
 import RecoveryOverview from "@/app/components/recovery/RecoveryOverview";
 import { useEffect, useState } from "react";
 import { withProviderAuth } from "@/lib/oauthClient";
+import { CorosNightRecord, fetchCorosNights } from "@/lib/corosClient";
 
 // Define types for better type safety
 interface SleepDataItem {
@@ -35,7 +36,8 @@ interface SleepDataItem {
   lowest_heart_rate: number;
   movement_30_sec: string;
   period: number;
-  readiness: {
+  // Absent on COROS-sourced nights — COROS has no readiness equivalent.
+  readiness?: {
     contributors: {
       activity_balance: number;
       body_temperature: number;
@@ -149,6 +151,64 @@ interface BurnoutSummary {
   total_weeks: number;
 }
 
+// COROS replaces Oura sleep metrics per day where its data exists. An Oura
+// night keeps its Oura-only fields (bedtime, readiness, HR/HRV series) and
+// takes COROS stage durations and vitals; sleep_algorithm_version marks the
+// provenance in the night details.
+function overlayCorosNight(
+  record: SleepDataItem,
+  coros: CorosNightRecord
+): SleepDataItem {
+  return {
+    ...record,
+    total_sleep_duration: coros.total_sleep_duration,
+    deep_sleep_duration: coros.deep_sleep_duration,
+    rem_sleep_duration: coros.rem_sleep_duration,
+    light_sleep_duration: coros.light_sleep_duration,
+    awake_time: coros.awake_time,
+    time_in_bed: coros.time_in_bed,
+    efficiency: coros.efficiency ?? record.efficiency,
+    average_heart_rate: coros.average_heart_rate ?? record.average_heart_rate,
+    lowest_heart_rate: coros.lowest_heart_rate ?? record.lowest_heart_rate,
+    average_hrv: coros.average_hrv ?? record.average_hrv,
+    sleep_algorithm_version: "COROS",
+  };
+}
+
+// A night COROS recorded but Oura did not. Fields COROS cannot provide are
+// zeroed/empty; the overview already filters zeros out of its stats.
+function corosOnlyNight(coros: CorosNightRecord): SleepDataItem {
+  return {
+    id: coros.id,
+    day: coros.day,
+    average_breath: 0,
+    average_heart_rate: coros.average_heart_rate ?? 0,
+    average_hrv: coros.average_hrv ?? 0,
+    awake_time: coros.awake_time,
+    bedtime_end: "",
+    bedtime_start: "",
+    deep_sleep_duration: coros.deep_sleep_duration,
+    efficiency: coros.efficiency ?? 0,
+    heart_rate: { interval: 0, items: [], timestamp: "" },
+    hrv: { interval: 0, items: [], timestamp: "" },
+    latency: 0,
+    light_sleep_duration: coros.light_sleep_duration,
+    low_battery_alert: false,
+    lowest_heart_rate: coros.lowest_heart_rate ?? 0,
+    movement_30_sec: "",
+    period: 0,
+    readiness_score_delta: 0,
+    rem_sleep_duration: coros.rem_sleep_duration,
+    restless_periods: 0,
+    sleep_phase_5_min: "",
+    sleep_score_delta: 0,
+    sleep_algorithm_version: "COROS",
+    time_in_bed: coros.time_in_bed,
+    total_sleep_duration: coros.total_sleep_duration,
+    type: "long_sleep",
+  };
+}
+
 export default function RecoveryPage() {
   // Default date range: last 3 months to today
   const today = new Date();
@@ -246,6 +306,9 @@ export default function RecoveryPage() {
     const rowsMap = new Map<string, WeekDailyRow>();
 
     try {
+      // COROS values take precedence over Oura per day where present.
+      const corosNights = await fetchCorosNights(week.week_start, week.week_end);
+
       // Fetch Oura sleep data for HRV and RHR
       const sleepRes = await fetch("/api/sleep/sleep_detail_days", {
         method: "POST",
@@ -256,15 +319,17 @@ export default function RecoveryPage() {
         }),
       });
 
-      if (sleepRes.ok) {
-        const data = await sleepRes.json();
-        console.log("Sleep data response:", data);
-        const sleepRecords: SleepDataItem[] = data.data || [];
-        console.log("Sleep records:", sleepRecords);
+      {
+        // COROS-only days still get rows when the Oura fetch fails.
         const dailyMap = new Map<string, SleepDataItem>();
-        sleepRecords.forEach((record: SleepDataItem) => {
-          dailyMap.set(record.day, record);
-        });
+        if (sleepRes.ok) {
+          const data = await sleepRes.json();
+          console.log("Sleep data response:", data);
+          const sleepRecords: SleepDataItem[] = data.data || [];
+          sleepRecords.forEach((record: SleepDataItem) => {
+            dailyMap.set(record.day, record);
+          });
+        }
 
         for (
           let d = new Date(weekStart);
@@ -273,32 +338,51 @@ export default function RecoveryPage() {
         ) {
           const date = d.toISOString().split("T")[0];
           const record = dailyMap.get(date);
-          if (!record) continue;
-          console.log(`Processing sleep record for ${date}:`, record);
-          console.log(`Sleep record score field:`, record.readiness?.score);
+          const coros = corosNights.get(date);
+          if (!record && !coros) continue;
 
-          // HRV
-          if (record.average_hrv && record.average_hrv > 0) {
-            const hrvValue = record.average_hrv;
+          // HRV — COROS first, Oura fallback
+          const corosHrv = coros?.average_hrv;
+          const hrvValue =
+            corosHrv && corosHrv > 0
+              ? corosHrv
+              : record?.average_hrv && record.average_hrv > 0
+              ? record.average_hrv
+              : null;
+          if (hrvValue) {
             const hrvScore = Math.max(0, (100 - hrvValue) / 100);
             const row = rowsMap.get(date) || { date };
             row.hrv = {
               value: hrvValue,
               score: hrvScore,
-              source: `Oura sleep_detail_days id: ${record.id}`,
+              source:
+                corosHrv && corosHrv > 0
+                  ? "COROS sleep HRV"
+                  : `Oura sleep_detail_days id: ${record!.id}`,
             };
             rowsMap.set(date, row);
           }
 
-          // Resting HR
-          if (record.average_heart_rate && record.average_heart_rate > 0) {
-            const rhrValue = record.average_heart_rate;
+          // Resting HR — COROS first, Oura fallback
+          const corosRhr = coros?.resting_heart_rate ?? coros?.average_heart_rate;
+          const rhrValue =
+            corosRhr && corosRhr > 0
+              ? corosRhr
+              : record?.average_heart_rate && record.average_heart_rate > 0
+              ? record.average_heart_rate
+              : null;
+          if (rhrValue) {
             const rhrScore = Math.min(1, (rhrValue - 50) / 20);
             const row = rowsMap.get(date) || { date };
             row.rhr = {
               value: rhrValue,
               score: rhrScore > 0 ? rhrScore : 0,
-              source: `Oura sleep_detail_days id: ${record.id}`,
+              source:
+                corosRhr && corosRhr > 0
+                  ? coros?.resting_heart_rate
+                    ? "COROS resting HR"
+                    : "COROS sleep avg HR"
+                  : `Oura sleep_detail_days id: ${record!.id}`,
             };
             rowsMap.set(date, row);
           }
@@ -342,6 +426,19 @@ export default function RecoveryPage() {
           }
         });
       }
+
+      // COROS sleep quality replaces the Oura sleep score where present
+      corosNights.forEach((coros, date) => {
+        if (coros.score != null && coros.score > 0) {
+          const row: WeekDailyRow = rowsMap.get(date) || { date };
+          row.sleepScore = {
+            value: coros.score,
+            score: Math.max(0, (100 - coros.score) / 100),
+            source: `COROS sleep score: ${coros.score}`,
+          };
+          rowsMap.set(date, row);
+        }
+      });
 
       // Fetch Oura daily activity for active calories
       const activityRes = await fetch("/api/oura/daily_activity", {
@@ -598,24 +695,40 @@ export default function RecoveryPage() {
 
   const handleSync = async () => {
     try {
-      const res = await fetch("/api/sleep/sleep_detail_days", {
-        method: "POST",
-        headers: withProviderAuth("oura", {
-          "Content-Type": "application/json",
+      const [res, corosNights] = await Promise.all([
+        fetch("/api/sleep/sleep_detail_days", {
+          method: "POST",
+          headers: withProviderAuth("oura", {
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ start_date: startDate, end_date: endDate }),
         }),
-        body: JSON.stringify({ start_date: startDate, end_date: endDate }),
-      });
+        fetchCorosNights(startDate, endDate),
+      ]);
 
       const data = await res.json();
-      if (res.ok) {
-        const sorted = [...data.data].sort((a, b) =>
-          b.day.localeCompare(a.day)
-        );
-        setSleepData(sorted);
-        setSelectedDay(sorted[0]?.day || "");
-      } else {
+      if (!res.ok && corosNights.size === 0) {
         alert("Error: " + data.error);
+        return;
       }
+
+      // COROS wins per day where it has data; Oura fills the rest.
+      const ouraRecords: SleepDataItem[] = res.ok ? data.data || [] : [];
+      const ouraDays = new Set(ouraRecords.map((record) => record.day));
+      const merged = ouraRecords.map((record) =>
+        record.type === "long_sleep" && corosNights.has(record.day)
+          ? overlayCorosNight(record, corosNights.get(record.day)!)
+          : record
+      );
+      corosNights.forEach((coros, day) => {
+        if (!ouraDays.has(day)) {
+          merged.push(corosOnlyNight(coros));
+        }
+      });
+
+      const sorted = merged.sort((a, b) => b.day.localeCompare(a.day));
+      setSleepData(sorted);
+      setSelectedDay(sorted[0]?.day || "");
     } catch (err) {
       alert("Failed to sync sleep data");
       console.error(err);
@@ -845,6 +958,7 @@ export default function RecoveryPage() {
                       </div>
                     </div>
 
+                    {selectedData.readiness && (
                     <div className="space-y-2">
                       <h3 className="font-bold text-lg text-purple-400">
                         Readiness Score
@@ -933,6 +1047,7 @@ export default function RecoveryPage() {
                         </div>
                       </div>
                     </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">

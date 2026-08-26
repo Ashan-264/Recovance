@@ -54,6 +54,12 @@ interface ProviderStatus {
   clientSecretEnv: string;
 }
 
+interface CorosStatus {
+  connected: boolean;
+  account: string | null;
+  envCredentialsAvailable: boolean;
+}
+
 export default function ConnectPage() {
   const [tokens, setTokens] = useState<
     Partial<Record<ProviderName, StoredTokens | null>>
@@ -67,6 +73,65 @@ export default function ConnectPage() {
     kind: "success" | "error";
     text: string;
   } | null>(null);
+
+  // COROS signs in with account credentials (no OAuth API exists), so its
+  // connection state lives server-side rather than in localStorage.
+  const [coros, setCoros] = useState<CorosStatus | null>(null);
+  const [corosEmail, setCorosEmail] = useState("");
+  const [corosPassword, setCorosPassword] = useState("");
+  const [corosRegion, setCorosRegion] = useState("us");
+  const [corosBusy, setCorosBusy] = useState(false);
+
+  const loadCorosStatus = useCallback(() => {
+    fetch("/api/auth/coros/login")
+      .then((res) => res.json())
+      .then((data) => setCoros(data))
+      .catch((err) => console.error("Failed to load COROS status:", err));
+  }, []);
+
+  useEffect(() => {
+    loadCorosStatus();
+  }, [loadCorosStatus]);
+
+  const handleCorosConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCorosBusy(true);
+    try {
+      const res = await fetch("/api/auth/coros/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: corosEmail,
+          password: corosPassword,
+          region: corosRegion,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ kind: "success", text: "Connected to COROS successfully." });
+        setCorosPassword("");
+        loadCorosStatus();
+      } else {
+        setMessage({ kind: "error", text: data.error || "COROS sign-in failed." });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ kind: "error", text: "COROS sign-in failed." });
+    } finally {
+      setCorosBusy(false);
+    }
+  };
+
+  const handleCorosDisconnect = async () => {
+    try {
+      await fetch("/api/auth/coros/login", { method: "DELETE" });
+      setMessage({ kind: "success", text: "Disconnected from COROS." });
+      loadCorosStatus();
+    } catch (err) {
+      console.error(err);
+      setMessage({ kind: "error", text: "Could not disconnect COROS." });
+    }
+  };
 
   const reloadTokens = useCallback(() => {
     setTokens({
@@ -283,6 +348,109 @@ export default function ConnectPage() {
               </div>
             );
           })}
+        </div>
+
+        {/* COROS has no OAuth API — it signs in with account credentials and
+            replaces Oura sleep metrics (stages, sleep HR, HRV, RHR) where its
+            data is available. */}
+        <div className="mt-4 rounded-lg border border-[#3b5450] bg-[#1e2a28] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold">
+                COROS
+                {coros?.connected && coros.account ? (
+                  <span className="ml-2 text-sm font-normal text-[#9cbab5]">
+                    ({coros.account})
+                  </span>
+                ) : null}
+              </h2>
+              <p className="text-sm text-[#9cbab5]">
+                Sleep stages, sleep heart rate, HRV, and resting HR — used in
+                place of Oura where available
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span
+                className={`text-sm font-semibold ${
+                  coros?.connected ? "text-green-400" : "text-gray-400"
+                }`}
+              >
+                {coros?.connected ? "● Connected" : "○ Not connected"}
+              </span>
+              {coros?.connected && (
+                <button
+                  onClick={handleCorosDisconnect}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold hover:bg-red-700 transition"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!coros?.connected && (
+            <form
+              onSubmit={handleCorosConnect}
+              className="mt-4 flex flex-wrap items-end gap-3"
+            >
+              <div className="flex-1 min-w-[180px]">
+                <label className="block text-xs mb-1 text-[#9cbab5]">
+                  COROS account email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={corosEmail}
+                  onChange={(e) => setCorosEmail(e.target.value)}
+                  className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                />
+              </div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-xs mb-1 text-[#9cbab5]">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={corosPassword}
+                  onChange={(e) => setCorosPassword(e.target.value)}
+                  className="w-full rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1 text-[#9cbab5]">
+                  Region
+                </label>
+                <select
+                  value={corosRegion}
+                  onChange={(e) => setCorosRegion(e.target.value)}
+                  className="rounded-md bg-[#283937] border border-[#3b5450] p-2 text-white text-sm"
+                >
+                  <option value="us">Americas</option>
+                  <option value="eu">Europe</option>
+                  <option value="asia">Asia-Pacific</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={corosBusy}
+                className="rounded-lg bg-[#0cf2d0] px-4 py-2 text-sm font-bold text-[#111817] hover:bg-[#0ad4b8] transition disabled:opacity-50"
+              >
+                {corosBusy ? "Signing in…" : "Connect"}
+              </button>
+            </form>
+          )}
+
+          {!coros?.connected && (
+            <p className="mt-3 text-xs text-[#9cbab5]">
+              COROS does not offer OAuth, so Recovance signs in with your
+              account credentials directly. Only a hash of the password is kept
+              on the server to refresh tokens — the password itself is never
+              stored.
+              {coros?.envCredentialsAvailable &&
+                " Server-side COROS credentials are configured, so COROS data already works without connecting here."}
+            </p>
+          )}
         </div>
 
         {/* Garmin has no OAuth API for this data, so it arrives as CSV
