@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import ChartLine from "./ChartLine";
+import { formatMinutesHM } from "@/lib/duration";
 
 interface StravaActivity {
   id: number;
@@ -187,11 +188,11 @@ export default function StravaInsights({
           {weeklyData.length > 0 && (
             <span>
               Average:{" "}
-              {Math.round(
+              {formatMinutesHM(
                 weeklyData.reduce((sum, d) => sum + d.totalMinutes, 0) /
                   weeklyData.length
-              )}{" "}
-              min/week
+              )}
+              /week
             </span>
           )}
         </div>

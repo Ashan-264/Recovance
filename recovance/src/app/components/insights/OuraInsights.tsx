@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ChartLine from "./ChartLine";
 import { withProviderAuth } from "@/lib/oauthClient";
+import { formatMinutesHM } from "@/lib/duration";
 
 interface OuraSleepData {
   id: string;
@@ -225,7 +226,7 @@ export default function OuraInsights({
                     (sum, d) => sum + (d.stress_high || 0),
                     0
                   ) / validStressData.length;
-                return `${formatStressMinutes(avgStress)} min/day (${
+                return `${formatMinutesHM(formatStressMinutes(avgStress))}/day (${
                   validStressData.length
                 } days)`;
               })()}

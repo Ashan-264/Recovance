@@ -351,6 +351,29 @@ export interface CorosDailyMetrics {
   day: string;
   avgSleepHrv: number | null;
   restingHeartRate: number | null;
+  /** daily training load */
+  trainingLoad: number | null;
+  /** acute:chronic load ratio */
+  trainingLoadRatio: number | null;
+  /** acute (7d) / chronic (42d) training impact */
+  ati: number | null;
+  cti: number | null;
+  /** fatigue 0-100 */
+  tiredRate: number | null;
+  /** daily performance/condition score */
+  performance: number | null;
+  /** meters */
+  distance: number | null;
+  /** seconds of activity */
+  duration: number | null;
+  // Fitness fields, only present for roughly the last 28 days
+  vo2max: number | null;
+  /** lactate threshold heart rate, bpm */
+  lthr: number | null;
+  /** lactate threshold pace, seconds per km */
+  ltsp: number | null;
+  staminaLevel: number | null;
+  staminaLevel7d: number | null;
 }
 
 function formatHappenDay(value: unknown): string | null {
@@ -433,7 +456,23 @@ export async function fetchCorosSleep(
   return nights.sort((a, b) => a.day.localeCompare(b.day));
 }
 
-/** Nightly HRV and resting HR from the Training Hub web API (up to ~24 weeks). */
+function webHeaders(auth: CorosAuth): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "User-Agent": USER_AGENT,
+    accessToken: auth.accessToken,
+    yfheader: JSON.stringify({ userId: auth.corosUserId }),
+  };
+}
+
+const num = (value: unknown): number | null =>
+  typeof value === "number" ? value : null;
+
+/**
+ * Daily wellness/training metrics from the Training Hub web API (up to ~24
+ * weeks). VO2max/LTHR/stamina live on a second endpoint that only covers the
+ * last ~28 days; they are merged in per day where available.
+ */
 export async function fetchCorosDaily(
   auth: CorosAuth,
   startDate: string,
@@ -443,27 +482,185 @@ export async function fetchCorosDaily(
   url.searchParams.set("startDay", toHappenDay(startDate));
   url.searchParams.set("endDay", toHappenDay(endDate));
 
-  const body = await corosFetch(url.toString(), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "User-Agent": USER_AGENT,
-      accessToken: auth.accessToken,
-      yfheader: JSON.stringify({ userId: auth.corosUserId }),
-    },
-  });
+  const [body, analyseBody] = await Promise.all([
+    corosFetch(url.toString(), { method: "GET", headers: webHeaders(auth) }),
+    corosFetch(`${WEB_BASE[auth.secrets.region]}/analyse/query`, {
+      method: "GET",
+      headers: webHeaders(auth),
+    }).catch((error) => {
+      console.error("COROS analyse/query failed (fitness fields skipped):", error);
+      return {} as Record<string, unknown>;
+    }),
+  ]);
   checkResponse(body, "analyse");
 
   const days = (body as { data?: { dayList?: Record<string, unknown>[] } }).data?.dayList ?? [];
-  const records: CorosDailyMetrics[] = [];
+  const byDay = new Map<string, CorosDailyMetrics>();
   for (const item of days) {
     const day = formatHappenDay(item.happenDay);
     if (!day) continue;
-    records.push({
+    byDay.set(day, {
       day,
-      avgSleepHrv: (item.avgSleepHrv as number | undefined) ?? null,
-      restingHeartRate: (item.rhr as number | undefined) ?? null,
+      avgSleepHrv: num(item.avgSleepHrv),
+      restingHeartRate: num(item.rhr),
+      trainingLoad: num(item.trainingLoad),
+      trainingLoadRatio: num(item.trainingLoadRatio),
+      ati: num(item.ati),
+      cti: num(item.cti),
+      tiredRate: num(item.tiredRateNew),
+      performance: num(item.performance),
+      distance: num(item.distance),
+      duration: num(item.duration),
+      vo2max: num(item.vo2max),
+      lthr: num(item.lthr),
+      ltsp: num(item.ltsp),
+      staminaLevel: num(item.staminaLevel),
+      staminaLevel7d: num(item.staminaLevel7d),
     });
   }
-  return records.sort((a, b) => a.day.localeCompare(b.day));
+
+  // Merge fitness fields from t7dayList (last ~28 days)
+  if ((analyseBody as { result?: string }).result === "0000") {
+    const t7 =
+      (analyseBody as { data?: { t7dayList?: Record<string, unknown>[] } }).data?.t7dayList ?? [];
+    for (const item of t7) {
+      const day = formatHappenDay(item.happenDay);
+      const rec = day ? byDay.get(day) : undefined;
+      if (!rec) continue;
+      rec.vo2max = num(item.vo2max) ?? rec.vo2max;
+      rec.lthr = num(item.lthr) ?? rec.lthr;
+      rec.ltsp = num(item.ltsp) ?? rec.ltsp;
+      rec.staminaLevel = num(item.staminaLevel) ?? rec.staminaLevel;
+      rec.staminaLevel7d = num(item.staminaLevel7d) ?? rec.staminaLevel7d;
+    }
+  }
+
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
+export interface CorosHrvDashboard {
+  /** RMSSD baseline the watch computed */
+  baseline: number | null;
+  standardDeviation: number | null;
+  /** last ~7 nights */
+  nights: { day: string; avgSleepHrv: number | null }[];
+}
+
+/** Nightly HRV with COROS's own baseline/SD (dashboard covers ~7 days only). */
+export async function fetchCorosHrvDashboard(auth: CorosAuth): Promise<CorosHrvDashboard> {
+  const body = await corosFetch(`${WEB_BASE[auth.secrets.region]}/dashboard/query`, {
+    method: "GET",
+    headers: webHeaders(auth),
+  });
+  checkResponse(body, "dashboard");
+
+  const hrvData =
+    ((body as { data?: { summaryInfo?: { sleepHrvData?: Record<string, unknown> } } }).data
+      ?.summaryInfo?.sleepHrvData ?? {}) as Record<string, unknown>;
+
+  const nights: CorosHrvDashboard["nights"] = [];
+  for (const item of (hrvData.sleepHrvList as Record<string, unknown>[] | undefined) ?? []) {
+    const day = formatHappenDay(item.happenDay);
+    if (day) nights.push({ day, avgSleepHrv: num(item.avgSleepHrv) });
+  }
+  const today = formatHappenDay(hrvData.happenDay);
+  if (today && !nights.some((n) => n.day === today)) {
+    nights.push({ day: today, avgSleepHrv: num(hrvData.avgSleepHrv) });
+  }
+
+  return {
+    baseline: num(hrvData.sleepHrvBase),
+    standardDeviation: num(hrvData.sleepHrvSd),
+    nights: nights.sort((a, b) => a.day.localeCompare(b.day)),
+  };
+}
+
+const SPORT_NAMES: Record<number, string> = {
+  100: "Running",
+  102: "Trail Running",
+  103: "Track Running",
+  104: "Hiking",
+  200: "Road Bike",
+  201: "Indoor Cycling",
+  203: "Gravel Bike",
+  204: "MTB",
+  400: "Cardio",
+  402: "Strength",
+  403: "Yoga",
+  900: "Walking",
+  9807: "Bike Commute",
+};
+
+export interface CorosActivity {
+  id: string;
+  name: string | null;
+  sportType: number | null;
+  sportName: string | null;
+  /** epoch seconds */
+  startTime: number | null;
+  /** seconds */
+  durationSeconds: number | null;
+  /** meters */
+  distanceMeters: number | null;
+  avgHr: number | null;
+  maxHr: number | null;
+  /** kcal (the API reports physical calories; divided by 1000 here) */
+  calories: number | null;
+  trainingLoad: number | null;
+  avgPower: number | null;
+  elevationGain: number | null;
+}
+
+/** Activity list for a date range, following pagination. */
+export async function fetchCorosActivities(
+  auth: CorosAuth,
+  startDate: string,
+  endDate: string
+): Promise<CorosActivity[]> {
+  const activities: CorosActivity[] = [];
+  const size = 50;
+
+  for (let page = 1; page <= 20; page++) {
+    const url = new URL(`${WEB_BASE[auth.secrets.region]}/activity/query`);
+    url.searchParams.set("startDay", toHappenDay(startDate));
+    url.searchParams.set("endDay", toHappenDay(endDate));
+    url.searchParams.set("pageNumber", String(page));
+    url.searchParams.set("size", String(size));
+
+    const body = await corosFetch(url.toString(), {
+      method: "GET",
+      headers: webHeaders(auth),
+    });
+    checkResponse(body, "activity list");
+
+    const data = (body as { data?: Record<string, unknown> }).data ?? {};
+    const items = ((data.dataList ?? data.list ?? []) as Record<string, unknown>[]) || [];
+
+    for (const item of items) {
+      const sportType = num(item.sportType);
+      // The API's "calorie" field is physical calories (cal), not kcal.
+      const rawCalories = num(item.calorie);
+      activities.push({
+        id: String(item.labelId ?? ""),
+        name: (item.name as string | undefined) ?? (item.remark as string | undefined) ?? null,
+        sportType,
+        sportName:
+          sportType != null ? SPORT_NAMES[sportType] ?? `Sport ${sportType}` : null,
+        startTime: num(item.startTime),
+        durationSeconds: num(item.totalTime),
+        distanceMeters: num(item.distance) ?? num(item.totalDistance),
+        avgHr: num(item.avgHr),
+        maxHr: num(item.maxHr),
+        calories: rawCalories != null ? Math.round(rawCalories / 1000) : null,
+        trainingLoad: num(item.trainingLoad),
+        avgPower: num(item.avgPower),
+        elevationGain: num(item.ascent) ?? num(item.totalAscent) ?? num(item.elevationGain),
+      });
+    }
+
+    const total = num(data.totalCount) ?? num(data.count) ?? items.length;
+    if (items.length < size || activities.length >= (total ?? 0)) break;
+  }
+
+  return activities.sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0));
 }

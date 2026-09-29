@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/training", label: "Training" },
   { href: "/recovery", label: "Recovery" },
   { href: "/insights", label: "Insights" },
+  { href: "/coros", label: "COROS" },
   { href: "/connect", label: "Connect" },
   { href: "/coming-soon", label: "Coming up" },
 ];

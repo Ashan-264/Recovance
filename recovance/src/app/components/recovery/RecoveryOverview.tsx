@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { formatDurationHM } from "@/lib/duration";
 
 /**
  * The at-a-glance layer for the recovery page.
@@ -149,7 +150,7 @@ function StageBar({ night }: { night: NightLike }) {
               width: `${(stage.seconds / total) * 100}%`,
               background: stage.color,
             }}
-            title={`${stage.label}: ${Math.round(stage.seconds / 60)} min`}
+            title={`${stage.label}: ${formatDurationHM(stage.seconds)}`}
           />
         ))}
       </div>
@@ -160,7 +161,7 @@ function StageBar({ night }: { night: NightLike }) {
               className="h-2 w-2 rounded-full"
               style={{ background: stage.color }}
             />
-            {stage.label} {Math.round(stage.seconds / 60)}m
+            {stage.label} {formatDurationHM(stage.seconds)}
           </span>
         ))}
       </div>
@@ -202,6 +203,10 @@ export default function RecoveryOverview({
 
   const chronological = useMemo(() => [...nightly].reverse(), [nightly]);
   const latest = nightly[0] ?? null;
+  // The tiles and stage bar follow the night picked in the chip strip (or
+  // the detail sections' selector), defaulting to the latest night.
+  const shown =
+    nightly.find((night) => night.day === selectedDay) ?? latest;
 
   const series = useMemo(() => {
     const take = chronological.slice(-14);
@@ -250,8 +255,8 @@ export default function RecoveryOverview({
         <div>
           <h2 className="text-lg font-bold text-white">Recovery overview</h2>
           <p className="text-xs text-[#9cbab5]">
-            {latest
-              ? `Latest night: ${latest.day}`
+            {shown
+              ? `${shown === latest ? "Latest night" : "Night"}: ${shown.day}`
               : "No nights loaded for this range yet"}
           </p>
         </div>
@@ -281,18 +286,18 @@ export default function RecoveryOverview({
         </div>
       </div>
 
-      {latest ? (
+      {shown ? (
         <>
           {/* Latest-night stat tiles. */}
           <div className="mt-4 flex flex-wrap gap-3">
-            {latest.readiness?.score !== undefined && (
+            {shown.readiness?.score !== undefined && (
               <Tile
                 label="Readiness"
-                value={String(latest.readiness?.score ?? "—")}
+                value={String(shown.readiness?.score ?? "—")}
                 delta={
-                  medians.readiness === null || latest.readiness == null
+                  medians.readiness === null || shown.readiness == null
                     ? null
-                    : latest.readiness.score - medians.readiness
+                    : shown.readiness.score - medians.readiness
                 }
                 deltaUnit=""
                 goodWhenHigher
@@ -301,12 +306,11 @@ export default function RecoveryOverview({
             )}
             <Tile
               label="Sleep"
-              value={(latest.total_sleep_duration / 3600).toFixed(1)}
-              unit="h"
+              value={formatDurationHM(shown.total_sleep_duration)}
               delta={
                 medians.sleepHours === null
                   ? null
-                  : latest.total_sleep_duration / 3600 - medians.sleepHours
+                  : shown.total_sleep_duration / 3600 - medians.sleepHours
               }
               deltaUnit="h"
               goodWhenHigher
@@ -314,12 +318,12 @@ export default function RecoveryOverview({
             />
             <Tile
               label="HRV"
-              value={latest.average_hrv > 0 ? String(latest.average_hrv) : "—"}
+              value={shown.average_hrv > 0 ? String(shown.average_hrv) : "—"}
               unit="ms"
               delta={
-                medians.hrv === null || latest.average_hrv <= 0
+                medians.hrv === null || shown.average_hrv <= 0
                   ? null
-                  : latest.average_hrv - medians.hrv
+                  : shown.average_hrv - medians.hrv
               }
               deltaUnit="ms"
               goodWhenHigher
@@ -328,15 +332,15 @@ export default function RecoveryOverview({
             <Tile
               label="Lowest HR"
               value={
-                latest.lowest_heart_rate > 0
-                  ? String(latest.lowest_heart_rate)
+                shown.lowest_heart_rate > 0
+                  ? String(shown.lowest_heart_rate)
                   : "—"
               }
               unit="bpm"
               delta={
-                medians.lowestHr === null || latest.lowest_heart_rate <= 0
+                medians.lowestHr === null || shown.lowest_heart_rate <= 0
                   ? null
-                  : latest.lowest_heart_rate - medians.lowestHr
+                  : shown.lowest_heart_rate - medians.lowestHr
               }
               deltaUnit="bpm"
               goodWhenHigher={false}
@@ -344,12 +348,12 @@ export default function RecoveryOverview({
             />
             <Tile
               label="Efficiency"
-              value={latest.efficiency > 0 ? String(latest.efficiency) : "—"}
+              value={shown.efficiency > 0 ? String(shown.efficiency) : "—"}
               unit="%"
               delta={
-                medians.efficiency === null || latest.efficiency <= 0
+                medians.efficiency === null || shown.efficiency <= 0
                   ? null
-                  : latest.efficiency - medians.efficiency
+                  : shown.efficiency - medians.efficiency
               }
               deltaUnit="%"
               goodWhenHigher
@@ -359,7 +363,7 @@ export default function RecoveryOverview({
 
           {/* How the night was spent. */}
           <div className="mt-4">
-            <StageBar night={latest} />
+            <StageBar night={shown} />
           </div>
 
           {/* Recent nights drive the detail sections below. */}
@@ -379,7 +383,7 @@ export default function RecoveryOverview({
                       ? "bg-[#0cf2d0] text-[#111817]"
                       : "bg-[#151f1e] text-[#9cbab5] hover:text-white"
                   }`}
-                  title={`${(night.total_sleep_duration / 3600).toFixed(1)}h sleep`}
+                  title={`${formatDurationHM(night.total_sleep_duration)} sleep`}
                 >
                   {label}
                 </button>

@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Line } from "react-chartjs-2";
 import { useStrava } from "@/app/contexts/StravaContext";
 import { withProviderAuth } from "@/lib/oauthClient";
+import { formatMinutesHM } from "@/lib/duration";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -409,7 +410,7 @@ export default function TrendVisualizer() {
             const label = context.dataset.label || "";
             const value = context.parsed.y;
             if (label === "Activity Minutes") {
-              return `${label}: ${value} min`;
+              return `${label}: ${formatMinutesHM(value)}`;
             } else {
               return `${label}: ${value}`;
             }

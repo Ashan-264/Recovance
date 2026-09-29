@@ -7,6 +7,7 @@ import RecoveryOverview from "@/app/components/recovery/RecoveryOverview";
 import { useEffect, useState } from "react";
 import { withProviderAuth } from "@/lib/oauthClient";
 import { CorosNightRecord, fetchCorosNights } from "@/lib/corosClient";
+import { formatDurationHM, formatMinutesHM } from "@/lib/duration";
 
 // Define types for better type safety
 interface SleepDataItem {
@@ -884,11 +885,11 @@ export default function RecoveryPage() {
                         </p>
                         <p>
                           <strong>Time in Bed:</strong>{" "}
-                          {Math.round(selectedData.time_in_bed / 60)} min
+                          {formatDurationHM(selectedData.time_in_bed)}
                         </p>
                         <p>
                           <strong>Latency:</strong>{" "}
-                          {Math.round(selectedData.latency / 60)} min
+                          {formatDurationHM(selectedData.latency)}
                         </p>
                         <p>
                           <strong>Efficiency:</strong> {selectedData.efficiency}
@@ -904,26 +905,23 @@ export default function RecoveryPage() {
                         </h3>
                         <p>
                           <strong>Total Sleep:</strong>{" "}
-                          {Math.round(selectedData.total_sleep_duration / 60)}{" "}
-                          min
+                          {formatDurationHM(selectedData.total_sleep_duration)}
                         </p>
                         <p>
                           <strong>Deep Sleep:</strong>{" "}
-                          {Math.round(selectedData.deep_sleep_duration / 60)}{" "}
-                          min
+                          {formatDurationHM(selectedData.deep_sleep_duration)}
                         </p>
                         <p>
                           <strong>REM Sleep:</strong>{" "}
-                          {Math.round(selectedData.rem_sleep_duration / 60)} min
+                          {formatDurationHM(selectedData.rem_sleep_duration)}
                         </p>
                         <p>
                           <strong>Light Sleep:</strong>{" "}
-                          {Math.round(selectedData.light_sleep_duration / 60)}{" "}
-                          min
+                          {formatDurationHM(selectedData.light_sleep_duration)}
                         </p>
                         <p>
                           <strong>Awake Time:</strong>{" "}
-                          {Math.round(selectedData.awake_time / 60)} min
+                          {formatDurationHM(selectedData.awake_time)}
                         </p>
                         <p>
                           <strong>Restless Periods:</strong>{" "}
@@ -1452,9 +1450,11 @@ export default function RecoveryPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-gray-400">Avg Stress (min)</p>
+                          <p className="text-gray-400">Avg Stress</p>
                           <p className="font-semibold text-red-400">
-                            {weekAverages[index]?.stress?.toFixed(0) ?? "—"}
+                            {weekAverages[index]?.stress != null
+                              ? formatMinutesHM(weekAverages[index]!.stress!)
+                              : "—"}
                           </p>
                         </div>
                         <div>
@@ -1525,7 +1525,7 @@ export default function RecoveryPage() {
                                   <th className="px-3 py-2">
                                     Readiness Source
                                   </th>
-                                  <th className="px-3 py-2">Stress (min)</th>
+                                  <th className="px-3 py-2">Stress</th>
                                   <th className="px-3 py-2">Stress Risk</th>
                                   <th className="px-3 py-2">Stress Source</th>
                                   <th className="px-3 py-2">Resilience</th>
@@ -1622,7 +1622,7 @@ export default function RecoveryPage() {
                                       </td>
                                       <td className="px-3 py-2">
                                         {row.stress
-                                          ? row.stress.value.toFixed(0)
+                                          ? formatMinutesHM(row.stress.value)
                                           : "—"}
                                       </td>
                                       <td className="px-3 py-2">
